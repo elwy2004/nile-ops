@@ -134,12 +134,18 @@ async function main() {
   const u = await db.query<{ id: number }>(
     "INSERT INTO users (email,name,role,password_hash) VALUES ('s@x','S','sales',$1) RETURNING id", [h]
   );
+  // mirrors createQuote(): insert, then number the row from its own id
   const qr = await db.query<{ id: number; status: string }>(
-    `INSERT INTO quotes (ref,title,pax,fx,margin_pct,flights_usd,created_by,owner_id)
-     VALUES ('Q-2026-0001','Cairo & Nile',2,50,10,350,$1,$1) RETURNING id,status`, [u.rows[0].id]
+    `INSERT INTO quotes (title,pax,fx,margin_pct,flights_usd,created_by,owner_id)
+     VALUES ('Cairo & Nile',2,50,10,350,$1,$1) RETURNING id,status`, [u.rows[0].id]
   );
   const qid = qr.rows[0].id;
   check("new quote starts as draft", qr.rows[0].status, "draft");
+  await db.query(
+    `UPDATE quotes SET ref = 'Q-' || to_char(created_at,'YYYY') || '-' || lpad(id::text,4,'0') WHERE id=$1`, [qid]
+  );
+  const refRow = await db.query<{ ref: string }>("SELECT ref FROM quotes WHERE id=$1", [qid]);
+  check("reference is derived from the row id", /^Q-\d{4}-\d{4}$/.test(refRow.rows[0].ref), true);
   for (const [i, l] of lines.entries())
     await db.query("INSERT INTO quote_lines (quote_id,section,item_name,qty,sort) VALUES ($1,$2,$3,$4,$5)",
       [qid, l.section, l.item_name, l.qty, i]);

@@ -32,11 +32,12 @@ CREATE TABLE IF NOT EXISTS rate_items (
   UNIQUE (book, name)
 );
 
-CREATE SEQUENCE IF NOT EXISTS quote_ref_seq START 1;
-
 CREATE TABLE IF NOT EXISTS quotes (
   id           SERIAL PRIMARY KEY,
-  ref          TEXT NOT NULL UNIQUE,
+  -- Human reference (Q-2026-0001), derived from id right after insert.
+  -- Nullable only for that instant: a standalone sequence is not available on
+  -- every managed Postgres, so we number from the row's own id instead.
+  ref          TEXT UNIQUE,
   title        TEXT NOT NULL DEFAULT '',
   client_name  TEXT NOT NULL DEFAULT '',
   status       TEXT NOT NULL DEFAULT 'draft'

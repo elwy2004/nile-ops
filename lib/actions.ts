@@ -73,14 +73,24 @@ export async function createQuote(): Promise<void> {
   const user = await requireUser();
   if (user.role !== "sales" && user.role !== "admin") redirect("/quotes?denied=1");
 
-  const row = await one<{ id: number }>(
-    `INSERT INTO quotes (ref, title, created_by, owner_id)
-     VALUES ('Q-' || to_char(now(),'YYYY') || '-' || lpad(nextval('quote_ref_seq')::text, 4, '0'), '', $1, $1)
-     RETURNING id`, [user.id]
-  );
-  await q("INSERT INTO quote_events (quote_id, user_id, kind, note) VALUES ($1,$2,'created','Quote created')",
-    [row!.id, user.id]);
-  redirect(`/quotes/${row!.id}`);
+  // Insert, then number it from its own id. Two steps because a statement
+  // cannot read rows its own CTE just inserted.
+  const id = await tx(async client => {
+    const ins = await client.query<{ id: number }>(
+      `INSERT INTO quotes (title, created_by, owner_id) VALUES ('', $1, $1) RETURNING id`, [user.id]
+    );
+    const newId = ins.rows[0].id;
+    await client.query(
+      `UPDATE quotes SET ref = 'Q-' || to_char(created_at,'YYYY') || '-' || lpad(id::text, 4, '0')
+        WHERE id = $1`, [newId]
+    );
+    await client.query(
+      "INSERT INTO quote_events (quote_id, user_id, kind, note) VALUES ($1,$2,'created','Quote created')",
+      [newId, user.id]
+    );
+    return newId;
+  });
+  redirect(`/quotes/${id}`);
 }
 
 export async function saveQuote(form: FormData): Promise<void> {
