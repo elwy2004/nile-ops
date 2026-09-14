@@ -1,11 +1,11 @@
-# Nile Ops — Stage 1
+# Nile Ops — Stages 1 & 2
 
 A quotation moving from sales, through operations, to finance. Built on the
 pricing model from `Q.SH 2026.xlsx`.
 
 Next.js (App Router) + Postgres. No other services.
 
-## What Stage 1 does
+## Stage 1 — the quote through the desks
 
 - **Shared quotes.** One database, so ops sees what sales quoted.
 - **Accounts and roles.** `sales`, `ops`, `finance`, `admin` — enforced in every
@@ -31,11 +31,32 @@ Next.js (App Router) + Postgres. No other services.
 
 Margin is hidden from `ops`: they book hotels, they don't need the markup.
 
-## Not in Stage 1
+## Stage 2 — the supplier side
 
-Supplier bookings and vouchers (Stage 2). Invoices, payment schedules, payables
-and the margin variance report (Stage 3). "Invoiced" and "Paid" are currently
-status flags, not accounting records.
+- **Every sold line becomes a booking** the moment a client accepts, taken from
+  the frozen snapshot so it reflects what was sold rather than today's prices.
+- **Suppliers** — a directory of hotels, boats, transport, guides and
+  restaurants, typed so the right ones are offered first for each service.
+- **Operations board** on each file: assign a supplier, set the service date,
+  record the confirmation number and what the supplier actually charges.
+  Confirming requires both a supplier and their reference.
+- **A cross-file worklist** at `/operations` — everything still owed to a
+  supplier, in service-date order, with passed dates flagged.
+- **The finance handoff is gated**: a file cannot reach finance until every
+  service is confirmed or marked not needed. A file cannot be bounced back to
+  sales once suppliers have confirmed.
+- **Vouchers** — a printable voucher per confirmed service, numbered from the
+  file reference (`Q-2026-0001/03`). Deliberately shows no prices.
+- **Cost variance** — quoted against actual supplier cost, converted at the
+  file's *own* frozen rate so it isolates supplier movement from currency
+  movement.
+
+Booking confirmations are written into the same file history as status changes.
+
+## Not built yet (Stage 3)
+
+Invoices, payment schedules, supplier payables, and the realised margin report.
+"Invoiced" and "Paid" are still status flags, not accounting records.
 
 ## Setting it up
 

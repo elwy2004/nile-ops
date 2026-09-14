@@ -11,7 +11,11 @@ export function money(n: number, d = 2): string {
 /** Travel dates are plain calendar dates: format them as written, no zone shift. */
 export function shortDate(d: string | Date | null | undefined): string {
   if (!d) return "—";
-  const iso = typeof d === "string" ? d.slice(0, 10) : d.toISOString().slice(0, 10);
+  // A Date from a DATE column sits at local midnight, so read its local parts;
+  // toISOString() here would roll the day back east of UTC.
+  const iso = typeof d === "string"
+    ? d.slice(0, 10)
+    : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const [y, m, day] = iso.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, day)).toLocaleDateString("en-GB", {
     day: "2-digit", month: "short", year: "numeric", timeZone: "UTC",

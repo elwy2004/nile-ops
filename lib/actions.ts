@@ -4,8 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { q, one, tx } from "./db";
 import { createSession, destroySession, requireUser, hashPassword, verifyPassword } from "./auth";
-import { canEditQuote, canEditRates, canTransition, type Status, type Role } from "./workflow";
-import { freeze, SECTION_ORDER, type Line, type RateItem, type Section } from "./pricing";
+import { blockedReason, canEditQuote, canEditRates, canTransition, type Status, type Role } from "./workflow";
+import { freeze, SECTION_ORDER, type Line, type RateItem, type Section, type Snapshot } from "./pricing";
+import { bookingRowsFromSnapshot, SUPPLIER_KINDS, type BookingStatus } from "./bookings";
 
 /* Every action re-checks who is calling and what they may do. A page that
    renders a button is not authorisation. */
@@ -155,17 +156,27 @@ export async function moveQuote(form: FormData): Promise<void> {
   const move = canTransition(quote.status, to, user.role);
   if (!move) redirect(`/quotes/${id}?denied=1`);
 
+  // The gates are enforced here, not only in the UI that renders the button.
+  const bookingStates = await q<{ status: BookingStatus }>(
+    "SELECT status FROM bookings WHERE quote_id = $1", [id]
+  );
+  if (blockedReason(move, bookingStates)) redirect(`/quotes/${id}?blocked=1`);
+
   // Build the snapshot BEFORE opening the transaction: a query issued inside
   // tx() would wait for a second pooled connection that cannot be granted until
   // the transaction finishes, which deadlocks.
   let snapshot: string | null = null;
+  let newBookings: ReturnType<typeof bookingRowsFromSnapshot> = [];
   if (move.freezes) {
     const rates = await loadRates();
     const lines = await loadLines(id);
-    snapshot = JSON.stringify(freeze(
+    const snap = freeze(
       { pax: quote.pax, fx: quote.fx, margin_pct: quote.margin_pct, flights_usd: quote.flights_usd },
       lines, rates
-    ));
+    );
+    snapshot = JSON.stringify(snap);
+    // Each sold line becomes a service operations has to confirm.
+    newBookings = bookingRowsFromSnapshot(snap);
   }
 
   await tx(async client => {
@@ -175,10 +186,21 @@ export async function moveQuote(form: FormData): Promise<void> {
         "UPDATE quotes SET status=$2, snapshot=$3, accepted_at=now(), updated_at=now() WHERE id=$1",
         [id, to, snapshot]
       );
+      // Re-accepting after a bounce should not duplicate the service list.
+      await client.query("DELETE FROM bookings WHERE quote_id = $1", [id]);
+      for (const b of newBookings) {
+        await client.query(
+          `INSERT INTO bookings (quote_id, section, item_name, qty, sort, currency, quoted_cost)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [id, b.section, b.item_name, b.qty, b.sort, b.currency, b.quoted_cost]
+        );
+      }
     } else if (move.thaws) {
       await client.query(
         "UPDATE quotes SET status=$2, snapshot=NULL, accepted_at=NULL, updated_at=now() WHERE id=$1", [id, to]
       );
+      // The sold prices are gone, so the services built from them are stale.
+      await client.query("DELETE FROM bookings WHERE quote_id = $1", [id]);
     } else {
       await client.query("UPDATE quotes SET status=$2, updated_at=now() WHERE id=$1", [id, to]);
     }
@@ -293,4 +315,124 @@ export async function setUserRole(form: FormData): Promise<void> {
   await q("UPDATE users SET role = $2 WHERE id = $1", [id, role]);
   revalidatePath("/admin");
   redirect("/admin");
+}
+
+/* ---------- bookings (operations) ---------- */
+
+/** Operations owns the supplier side; sales and finance only read it. */
+function assertOps(role: Role, backTo: string): void {
+  if (role !== "ops" && role !== "admin") redirect(`${backTo}?denied=1`);
+}
+
+export async function updateBooking(form: FormData): Promise<void> {
+  const user = await requireUser();
+  const id = Number(form.get("id"));
+  const row = await one<{ quote_id: number; status: BookingStatus; item_name: string }>(
+    "SELECT quote_id, status, item_name FROM bookings WHERE id = $1", [id]
+  );
+  if (!row) redirect("/quotes");
+  const back = `/quotes/${row.quote_id}`;
+  assertOps(user.role, back);
+
+  const status = String(form.get("status") ?? row.status) as BookingStatus;
+  if (!["pending", "requested", "confirmed", "cancelled"].includes(status)) redirect(back);
+
+  const supplierRaw = String(form.get("supplier_id") ?? "").trim();
+  const supplier_id = supplierRaw === "" ? null : Number(supplierRaw);
+  const dateRaw = String(form.get("service_date") ?? "").trim();
+  const actualRaw = String(form.get("actual_cost") ?? "").trim();
+
+  // A confirmation needs a supplier and a reference, or it isn't one.
+  const confirmation_no = String(form.get("confirmation_no") ?? "").trim().slice(0, 80);
+  if (status === "confirmed" && (!supplier_id || confirmation_no === "")) {
+    redirect(`${back}?needsref=1`);
+  }
+
+  await tx(async client => {
+    await client.query(
+      `UPDATE bookings SET supplier_id=$2, status=$3, confirmation_no=COALESCE($4,''),
+              service_date=$5, actual_cost=$6, notes=COALESCE($7,''), updated_at=now()
+         WHERE id=$1`,
+      [id, supplier_id, status, confirmation_no,
+       dateRaw === "" ? null : dateRaw,
+       actualRaw === "" ? null : Number(actualRaw),
+       String(form.get("notes") ?? "").slice(0, 300)]
+    );
+    if (status !== row.status) {
+      await client.query(
+        `INSERT INTO quote_events (quote_id, user_id, kind, note)
+         VALUES ($1,$2,'booking',COALESCE($3,''))`,
+        [row.quote_id, user.id, `${row.item_name}: ${status}${confirmation_no ? ` (${confirmation_no})` : ""}`]
+      );
+    }
+  });
+
+  revalidatePath(back);
+  redirect(`${back}?booked=1`);
+}
+
+/** Apply a supplier and date to every still-unassigned line of one section. */
+export async function bulkAssignSupplier(form: FormData): Promise<void> {
+  const user = await requireUser();
+  const quoteId = Number(form.get("quote_id"));
+  const back = `/quotes/${quoteId}`;
+  assertOps(user.role, back);
+
+  const section = String(form.get("section")) as Section;
+  if (!SECTION_ORDER.includes(section)) redirect(back);
+  const supplierRaw = String(form.get("supplier_id") ?? "").trim();
+  if (supplierRaw === "") redirect(back);
+
+  await q(
+    `UPDATE bookings SET supplier_id=$3, updated_at=now()
+       WHERE quote_id=$1 AND section=$2 AND supplier_id IS NULL AND status IN ('pending','requested')`,
+    [quoteId, section, Number(supplierRaw)]
+  );
+  revalidatePath(back);
+  redirect(`${back}?booked=1`);
+}
+
+/* ---------- suppliers ---------- */
+
+export async function saveSupplier(_prev: unknown, form: FormData): Promise<{ error?: string; ok?: string }> {
+  const user = await requireUser();
+  if (user.role !== "ops" && user.role !== "admin") {
+    return { error: "Only operations and administrators manage suppliers." };
+  }
+
+  const idRaw = String(form.get("id") ?? "").trim();
+  const name = String(form.get("name") ?? "").trim().slice(0, 160);
+  const kind = String(form.get("kind") ?? "other");
+  if (!name) return { error: "Enter a supplier name." };
+  if (!SUPPLIER_KINDS.includes(kind as never)) return { error: "Pick a supplier type." };
+
+  const fields = [
+    name, kind,
+    String(form.get("phone") ?? "").trim().slice(0, 60),
+    String(form.get("email") ?? "").trim().slice(0, 160),
+    String(form.get("notes") ?? "").trim().slice(0, 400),
+  ];
+
+  if (idRaw === "") {
+    const clash = await one("SELECT id FROM suppliers WHERE lower(name) = lower($1)", [name]);
+    if (clash) return { error: "A supplier with that name already exists." };
+    await q(`INSERT INTO suppliers (name,kind,phone,email,notes) VALUES ($1,$2,$3,$4,$5)`, fields);
+    revalidatePath("/suppliers");
+    return { ok: `${name} added.` };
+  }
+
+  await q(
+    `UPDATE suppliers SET name=$2, kind=$3, phone=$4, email=$5, notes=$6 WHERE id=$1`,
+    [Number(idRaw), ...fields]
+  );
+  revalidatePath("/suppliers");
+  return { ok: `${name} updated.` };
+}
+
+export async function archiveSupplier(form: FormData): Promise<void> {
+  const user = await requireUser();
+  assertOps(user.role, "/suppliers");
+  await q("UPDATE suppliers SET archived = NOT archived WHERE id = $1", [Number(form.get("id"))]);
+  revalidatePath("/suppliers");
+  redirect("/suppliers");
 }

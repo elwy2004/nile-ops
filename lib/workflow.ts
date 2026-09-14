@@ -34,8 +34,12 @@ export type Transition = {
   roles: Role[];
   /** Freeze the price book into the quote as it crosses this transition. */
   freezes?: boolean;
-  /** Reopen for editing — clears the frozen snapshot. */
+  /** Reopen for editing — clears the frozen snapshot and drops its bookings. */
   thaws?: boolean;
+  /** Cannot be taken while any booking still needs chasing. */
+  needsSettledBookings?: boolean;
+  /** Cannot be taken once a supplier booking has been confirmed. */
+  blockedByConfirmedBookings?: boolean;
   tone?: "go" | "warn" | "stop";
   hint?: string;
 };
@@ -54,12 +58,14 @@ export const TRANSITIONS: Record<Status, Transition[]> = {
   accepted: [
     { to: "confirming", label: "Start confirming", roles: ["ops", "admin"], tone: "go" },
     { to: "quoted", label: "Send back to sales", roles: ["ops", "admin"], thaws: true, tone: "warn",
-      hint: "Unlocks prices so sales can requote." },
+      blockedByConfirmedBookings: true,
+      hint: "Unlocks prices so sales can requote, and discards the supplier bookings." },
     { to: "cancelled", label: "Cancel", roles: ["ops", "admin"], tone: "stop" },
   ],
   confirming: [
     { to: "ready", label: "All services confirmed", roles: ["ops", "admin"], tone: "go",
-      hint: "Hands the file to finance for invoicing." },
+      needsSettledBookings: true,
+      hint: "Hands the file to finance for invoicing. Every booking must be confirmed or marked not needed first." },
     { to: "accepted", label: "Back to accepted", roles: ["ops", "admin"], tone: "warn" },
     { to: "cancelled", label: "Cancel", roles: ["ops", "admin"], tone: "stop" },
   ],
@@ -102,4 +108,22 @@ export function canEditRates(role: Role): boolean {
 /** Margin is commercial information — ops doesn't need it to book hotels. */
 export function canSeeMargin(role: Role): boolean {
   return role === "sales" || role === "finance" || role === "admin";
+}
+
+/** Why a transition the role is otherwise allowed cannot be taken right now.
+    Returns null when nothing blocks it. */
+export function blockedReason(
+  t: Transition,
+  bookings: { status: "pending" | "requested" | "confirmed" | "cancelled" }[]
+): string | null {
+  if (t.needsSettledBookings) {
+    const open = bookings.filter(b => b.status === "pending" || b.status === "requested").length;
+    if (open > 0) {
+      return `${open} ${open === 1 ? "service is" : "services are"} still unconfirmed.`;
+    }
+  }
+  if (t.blockedByConfirmedBookings && bookings.some(b => b.status === "confirmed")) {
+    return "Suppliers have already confirmed. Cancel those bookings first.";
+  }
+  return null;
 }

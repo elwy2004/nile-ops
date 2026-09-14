@@ -9,7 +9,8 @@
     "dev:db": "tsx scripts/dev-db.ts",
     "migrate": "tsx scripts/migrate.ts",
     "verify": "tsx scripts/verify.ts",
-    "seed-demo": "tsx scripts/seed-demo.ts"
+    "seed-demo": "tsx scripts/seed-demo.ts",
+    "seed-file": "tsx scripts/seed-file.ts"
   },
   "dependencies": {
     "@types/pg": "^8.23.1",

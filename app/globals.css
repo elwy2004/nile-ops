@@ -139,3 +139,9 @@ table.data tbody tr:hover td{background:var(--surface-2)}
   .page-head .actions{margin-left:0;width:100%}
   .cellgrid{grid-template-columns:1fr}
 }
+
+/* ---------- Stage 2: bookings ---------- */
+.mini{background:none;border:1px solid var(--line-strong);border-radius:5px;padding:5px 10px;
+      font-size:12px;font-family:var(--sans);cursor:pointer;color:var(--muted)}
+.mini:hover{border-color:var(--accent);color:var(--accent)}
+.mini.danger:hover{border-color:var(--crit);color:var(--crit)}

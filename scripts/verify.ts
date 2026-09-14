@@ -7,8 +7,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { compute, freeze, makeLookup, tierIndex, type RateItem, type Line } from "../lib/pricing";
-import { allowedTransitions, canEditQuote, canTransition } from "../lib/workflow";
+import { allowedTransitions, blockedReason, canEditQuote, canTransition } from "../lib/workflow";
+import { bookingRowsFromSnapshot, isSettled, outstanding, variance, voucherNo, type Booking } from "../lib/bookings";
 import { hashPassword, verifyPassword } from "../lib/auth-crypto";
+import { shortDate } from "../lib/format";
 
 let failures = 0;
 function check(name: string, got: unknown, want: unknown) {
@@ -166,7 +168,95 @@ async function main() {
   const ev = await db.query<{ c: string }>("SELECT count(*)::text c FROM quote_events WHERE quote_id=$1", [qid]);
   check("audit trail records the handoff", ev.rows[0].c, "1");
 
+  console.log("\n── stage 2: supplier bookings ──");
+  const rows = bookingRowsFromSnapshot(snap);
+  check("a booking per sold line", rows.length, 12);
+  check("accommodation is booked in USD", rows.find(r => r.section === "acc")?.currency, "USD");
+  check("transfers are booked in EGP", rows.find(r => r.section === "transfers")?.currency, "EGP");
+  near("a booking carries the sold cost", rows.find(r => r.item_name === "CAI 5")!.quoted_cost, 180);
+
+  const sup = await db.query<{ id: number }>(
+    "INSERT INTO suppliers (name,kind,phone) VALUES ('Mena House','hotel','+20 2 100') RETURNING id"
+  );
+  for (const r of rows)
+    await db.query(
+      `INSERT INTO bookings (quote_id,section,item_name,qty,sort,currency,quoted_cost)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [qid, r.section, r.item_name, r.qty, r.sort, r.currency, r.quoted_cost]
+    );
+  const stored2 = await db.query<{ n: string }>("SELECT count(*)::text n FROM bookings WHERE quote_id=$1", [qid]);
+  check("bookings persist", stored2.rows[0].n, "12");
+
+  let bad = false;
+  try { await db.query("UPDATE bookings SET status='invented' WHERE quote_id=$1", [qid]); }
+  catch { bad = true; }
+  check("invalid booking status is rejected", bad, true);
+
+  const all = await db.query<Booking>(
+    `SELECT id,quote_id,section,item_name,qty::float8 AS qty,sort,supplier_id,null AS supplier_name,
+            status,confirmation_no,service_date,currency,quoted_cost::float8 AS quoted_cost,
+            actual_cost::float8 AS actual_cost,notes
+       FROM bookings WHERE quote_id=$1 ORDER BY sort`, [qid]
+  );
+  check("nothing is settled yet", outstanding(all.rows), 12);
+  check("a pending booking is not settled", isSettled(all.rows[0]), false);
+
+  console.log("\n── the finance gate ──");
+  const toReady = canTransition("confirming", "ready", "ops")!;
+  check("ops cannot hand over with services open",
+    blockedReason(toReady, all.rows.map(b => ({ status: b.status }))),
+    "12 services are still unconfirmed.");
+
+  await db.query("UPDATE bookings SET status='confirmed', supplier_id=$2, confirmation_no='MH-8841' WHERE quote_id=$1",
+    [qid, sup.rows[0].id]);
+  const settled = await db.query<{ status: Booking["status"] }>("SELECT status FROM bookings WHERE quote_id=$1", [qid]);
+  check("once every service is confirmed the gate opens", blockedReason(toReady, settled.rows), null);
+
+  const bounce = canTransition("accepted", "quoted", "ops")!;
+  check("cannot bounce a file suppliers already confirmed",
+    blockedReason(bounce, settled.rows),
+    "Suppliers have already confirmed. Cancel those bookings first.");
+
+  console.log("\n── cost variance ──");
+  const priced = await db.query<Booking>(
+    `SELECT id,quote_id,section,item_name,qty::float8 AS qty,sort,supplier_id,null AS supplier_name,
+            status,confirmation_no,service_date,currency,quoted_cost::float8 AS quoted_cost,
+            actual_cost::float8 AS actual_cost,notes
+       FROM bookings WHERE quote_id=$1 ORDER BY sort`, [qid]
+  );
+  const v0 = variance(priced.rows, 50);
+  near("with no actuals, cost equals what was sold", v0.diffUSD, 0);
+  // the hotel actually charges 60 USD more across the stay
+  await db.query("UPDATE bookings SET actual_cost = quoted_cost + 60 WHERE quote_id=$1 AND item_name='CAI 5'", [qid]);
+  const priced2 = await db.query<Booking>(
+    `SELECT id,quote_id,section,item_name,qty::float8 AS qty,sort,supplier_id,null AS supplier_name,
+            status,confirmation_no,service_date,currency,quoted_cost::float8 AS quoted_cost,
+            actual_cost::float8 AS actual_cost,notes
+       FROM bookings WHERE quote_id=$1 ORDER BY sort`, [qid]
+  );
+  const v1 = variance(priced2.rows, 50);
+  near("a supplier overcharge shows as variance", v1.diffUSD, 60);
+  check("variance counts what has been priced", v1.priced, 1);
+  // an EGP overrun converts at the file's own rate, not today's
+  await db.query("UPDATE bookings SET actual_cost = quoted_cost + 500 WHERE quote_id=$1 AND item_name='Airport Trans'", [qid]);
+  const priced3 = await db.query<Booking>(
+    `SELECT id,quote_id,section,item_name,qty::float8 AS qty,sort,supplier_id,null AS supplier_name,
+            status,confirmation_no,service_date,currency,quoted_cost::float8 AS quoted_cost,
+            actual_cost::float8 AS actual_cost,notes
+       FROM bookings WHERE quote_id=$1 ORDER BY sort`, [qid]
+  );
+  near("EGP overruns convert at the file's frozen rate", variance(priced3.rows, 50).diffUSD, 60 + 500 / 50);
+
+  check("voucher numbers follow the file reference", voucherNo("Q-2026-0007", 2), "Q-2026-0007/03");
+
+  // a DATE must never slide a day when the server is not on UTC
+  check("a date string keeps its day", shortDate("2026-03-01"), "01 Mar 2026");
+  check("a Date at local midnight keeps its day", shortDate(new Date(2026, 2, 1)), "01 Mar 2026");
+
   await db.query("DELETE FROM quotes WHERE id=$1", [qid]);
+  const orphanBookings = await db.query<{ c: string }>("SELECT count(*)::text c FROM bookings WHERE quote_id=$1", [qid]);
+  check("deleting a quote takes its bookings with it", orphanBookings.rows[0].c, "0");
+
   const orphans = await db.query<{ c: string }>("SELECT count(*)::text c FROM quote_lines WHERE quote_id=$1", [qid]);
   check("deleting a quote takes its lines with it", orphans.rows[0].c, "0");
 

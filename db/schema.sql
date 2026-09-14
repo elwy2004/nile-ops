@@ -81,3 +81,44 @@ CREATE TABLE IF NOT EXISTS quote_events (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS quote_events_quote_idx ON quote_events(quote_id, created_at DESC);
+
+-- ── Stage 2: the supplier side ────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS suppliers (
+  id         SERIAL PRIMARY KEY,
+  name       TEXT NOT NULL UNIQUE,
+  kind       TEXT NOT NULL DEFAULT 'other'
+             CHECK (kind IN ('hotel','cruise','transport','guide','restaurant','site','other')),
+  phone      TEXT NOT NULL DEFAULT '',
+  email      TEXT NOT NULL DEFAULT '',
+  notes      TEXT NOT NULL DEFAULT '',
+  archived   BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- One booking per frozen quote line, created when the client accepts.
+-- quoted_cost is what the line was sold at; actual_cost is what the supplier
+-- really charges. The gap between them is the file's cost variance.
+CREATE TABLE IF NOT EXISTS bookings (
+  id              SERIAL PRIMARY KEY,
+  quote_id        INTEGER NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+  section         TEXT NOT NULL CHECK (section IN ('acc','sights','transfers','meals','services')),
+  item_name       TEXT NOT NULL,
+  qty             NUMERIC(10,2) NOT NULL DEFAULT 1,
+  sort            INTEGER NOT NULL DEFAULT 0,
+  supplier_id     INTEGER REFERENCES suppliers(id) ON DELETE SET NULL,
+  status          TEXT NOT NULL DEFAULT 'pending'
+                  CHECK (status IN ('pending','requested','confirmed','cancelled')),
+  confirmation_no TEXT NOT NULL DEFAULT '',
+  service_date    DATE,
+  currency        TEXT NOT NULL DEFAULT 'EGP' CHECK (currency IN ('USD','EGP')),
+  quoted_cost     NUMERIC(12,2) NOT NULL DEFAULT 0,
+  actual_cost     NUMERIC(12,2),                      -- null until the supplier confirms a price
+  notes           TEXT NOT NULL DEFAULT '',
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS bookings_quote_idx    ON bookings(quote_id, sort);
+CREATE INDEX IF NOT EXISTS bookings_status_idx   ON bookings(status);
+CREATE INDEX IF NOT EXISTS bookings_supplier_idx ON bookings(supplier_id);
+CREATE INDEX IF NOT EXISTS bookings_date_idx     ON bookings(service_date);

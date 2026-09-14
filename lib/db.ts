@@ -1,4 +1,10 @@
-import { Pool, type QueryResultRow } from "pg";
+import { Pool, types, type QueryResultRow } from "pg";
+
+/* Postgres DATE has no time and no zone, but node-postgres turns it into a JS
+   Date at LOCAL midnight — so a server east of UTC reads 2026-03-01 back as
+   2026-02-28 the moment anything converts it to ISO. Hand DATE back as the
+   plain "YYYY-MM-DD" string it already is. (1082 = DATE.) */
+types.setTypeParser(1082, v => v);
 import { connectionString, sslFor } from "./db-url";
 
 /* One pool per process. Next.js hot-reloads modules in dev, so stash it on

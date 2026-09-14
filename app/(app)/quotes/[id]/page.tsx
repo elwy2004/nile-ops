@@ -5,8 +5,11 @@ import { requireUser } from "@/lib/auth";
 import { q, one } from "@/lib/db";
 import { moveQuote, addNote } from "@/lib/actions";
 import {
-  allowedTransitions, canEditQuote, canSeeMargin, STATUS_LABEL, STATUS_DESK, type Status,
+  allowedTransitions, blockedReason, canEditQuote, canSeeMargin,
+  STATUS_LABEL, STATUS_DESK, type Status,
 } from "@/lib/workflow";
+import { outstanding, variance, type Booking, type Supplier } from "@/lib/bookings";
+import Services from "./services";
 import { compute, SECTIONS, SECTION_ORDER, type Line, type RateItem, type Snapshot } from "@/lib/pricing";
 import { money, shortDate, stamp } from "@/lib/format";
 import QuoteEditor from "./editor";
@@ -28,7 +31,7 @@ export default async function QuotePage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ denied?: string; saved?: string }>;
+  searchParams: Promise<{ denied?: string; saved?: string; booked?: string; blocked?: string; needsref?: string }>;
 }) {
   const user = await requireUser();
   const { id: idParam } = await params;
@@ -45,18 +48,30 @@ export default async function QuotePage({
   );
   if (!quote) notFound();
 
-  const [lines, rates, events] = await Promise.all([
+  const [lines, rates, events, bookings, suppliers] = await Promise.all([
     q<Line>(`SELECT section, item_name, qty::float8 AS qty FROM quote_lines WHERE quote_id=$1 ORDER BY sort, id`, [id]),
     q<RateItem>(`SELECT book, name, rate1::float8 AS rate1, rate2::float8 AS rate2, rate3::float8 AS rate3
                    FROM rate_items WHERE NOT archived ORDER BY book, name`),
     q<Event>(`SELECT e.id, e.kind, e.from_status, e.to_status, e.note, e.created_at, u.name AS who
                 FROM quote_events e LEFT JOIN users u ON u.id = e.user_id
                WHERE e.quote_id=$1 ORDER BY e.created_at DESC, e.id DESC`, [id]),
+    q<Booking>(`SELECT b.id, b.quote_id, b.section, b.item_name, b.qty::float8 AS qty, b.sort,
+                       b.supplier_id, s.name AS supplier_name, b.status, b.confirmation_no,
+                       b.service_date, b.currency, b.quoted_cost::float8 AS quoted_cost,
+                       b.actual_cost::float8 AS actual_cost, b.notes
+                  FROM bookings b LEFT JOIN suppliers s ON s.id = b.supplier_id
+                 WHERE b.quote_id=$1 ORDER BY b.sort, b.id`, [id]),
+    q<Supplier>(`SELECT id, name, kind, phone, email, notes, archived FROM suppliers
+                  WHERE NOT archived ORDER BY name`),
   ]);
 
   const editable = canEditQuote(quote.status, user.role);
   const showMargin = canSeeMargin(user.role);
-  const moves = allowedTransitions(quote.status, user.role);
+  const moves = allowedTransitions(quote.status, user.role)
+    .map(m => ({ ...m, blocked: blockedReason(m, bookings) }));
+  const opsCanEdit = user.role === "ops" || user.role === "admin";
+  const openServices = outstanding(bookings);
+  const costs = bookings.length ? variance(bookings, quote.fx) : null;
   const frozen = Boolean(quote.snapshot);
 
   const terms = { pax: quote.pax, fx: quote.fx, margin_pct: quote.margin_pct, flights_usd: quote.flights_usd };
@@ -97,6 +112,19 @@ export default async function QuotePage({
       {sp.saved && (
         <div className="note" style={{ marginBottom: 16 }}><div>Quote saved.</div></div>
       )}
+      {sp.booked && (
+        <div className="note" style={{ marginBottom: 16 }}><div>Service updated.</div></div>
+      )}
+      {sp.blocked && (
+        <div className="note bad" style={{ marginBottom: 16 }}>
+          <div>That move is blocked: {moves.find(m => m.blocked)?.blocked ?? "something still needs finishing."}</div>
+        </div>
+      )}
+      {sp.needsref && (
+        <div className="note bad" style={{ marginBottom: 16 }}>
+          <div>A confirmed booking needs both a supplier and their confirmation number.</div>
+        </div>
+      )}
 
       {moves.length > 0 && (
         <div className="card" style={{ marginBottom: 16 }}>
@@ -106,14 +134,15 @@ export default async function QuotePage({
               <form action={moveQuote} key={m.to} style={{ display: "contents" }}>
                 <input type="hidden" name="id" value={quote.id} />
                 <input type="hidden" name="to" value={m.to} />
-                <button className={`btn btn-${m.tone ?? "warn"}`} type="submit" title={m.hint}>{m.label}</button>
+                <button className={`btn btn-${m.tone ?? "warn"}`} type="submit"
+                        disabled={Boolean(m.blocked)} title={m.blocked ?? m.hint}>
+                  {m.label}
+                </button>
               </form>
             ))}
-            {moves.some(m => m.hint) && (
-              <p style={{ margin: 0, fontSize: 12.5, color: "var(--muted)", flexBasis: "100%" }}>
-                {moves.find(m => m.hint)?.hint}
-              </p>
-            )}
+            <p style={{ margin: 0, fontSize: 12.5, color: "var(--muted)", flexBasis: "100%" }}>
+              {moves.find(m => m.blocked)?.blocked ?? moves.find(m => m.hint)?.hint}
+            </p>
           </div>
         </div>
       )}
@@ -152,7 +181,44 @@ export default async function QuotePage({
         <ReadOnlyQuote quote={quote} lines={lines} rates={rates} totals={totals} showMargin={showMargin} frozen={frozen} />
       )}
 
-      <div className="grid" style={{ gridTemplateColumns: "minmax(0,1fr) 330px", marginTop: 16, alignItems: "start" }}>
+      {bookings.length > 0 && (
+        <div style={{ marginTop: 22 }}>
+          <div className="page-head" style={{ marginBottom: 12 }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 17, letterSpacing: "-.01em" }}>Services to operate</h2>
+              <p style={{ margin: "3px 0 0", color: "var(--muted)", fontSize: 13 }}>
+                {openServices === 0
+                  ? "Every service is settled — the file can go to finance."
+                  : `${openServices} of ${bookings.length} still to confirm.`}
+                {!opsCanEdit && " Operations maintains this."}
+              </p>
+            </div>
+            <div className="actions">
+              <Link href={`/quotes/${quote.id}/vouchers`} className="btn btn-sm">Vouchers</Link>
+            </div>
+          </div>
+
+          {costs && costs.priced > 0 && (
+            <div className={`note${Math.abs(costs.diffUSD) >= 0.5 ? " frozen" : ""}`} style={{ marginBottom: 14 }}>
+              <div>
+                <b>Cost so far:</b> suppliers quoted{" "}
+                <span className="tabular">{money(costs.quotedUSD)} USD</span>, actuals recorded on{" "}
+                {costs.priced} of {costs.total} services put it at{" "}
+                <span className="tabular">{money(costs.actualUSD)} USD</span>
+                {Math.abs(costs.diffUSD) >= 0.5 && (
+                  <> — <b className="tabular">{money(Math.abs(costs.diffUSD))} USD</b>{" "}
+                    {costs.diffUSD > 0 ? "over" : "under"} what was sold</>
+                )}.
+                {" "}Converted at the file&apos;s own {money(quote.fx, 2)} EGP/USD, so this is supplier movement, not currency.
+              </div>
+            </div>
+          )}
+
+          <Services quoteRef={quote.ref} bookings={bookings} suppliers={suppliers} editable={opsCanEdit} />
+        </div>
+      )}
+
+      <div className="grid" style={{ gridTemplateColumns: "minmax(0,1fr) 330px", marginTop: 22, alignItems: "start" }}>
         <div className="card">
           <h2>History<span className="side">{events.length} entries</span></h2>
           <div className="body">
