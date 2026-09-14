@@ -66,7 +66,7 @@ export default async function RatesPage({
                                 <input type="hidden" name="id" value={item.id} />
                                 <input className="t" name="name" defaultValue={item.name} style={{ padding: "6px 8px" }} />
                                 {[1, 2, 3].slice(0, rateCols).map(n => (
-                                  <input key={n} className="t num" type="number" step="0.01" min={0}
+                                  <input key={n} className="t num" type="number" step="any" min={0}
                                          name={`rate${n}`}
                                          defaultValue={item[`rate${n}` as "rate1" | "rate2" | "rate3"]}
                                          style={{ padding: "6px 8px" }} />
@@ -104,7 +104,7 @@ export default async function RatesPage({
                   <input type="hidden" name="book" value={book.key} />
                   <input className="t" name="name" placeholder={`New ${book.cols[0].toLowerCase()}`} style={{ padding: "6px 8px" }} required />
                   {[1, 2, 3].slice(0, rateCols).map(n => (
-                    <input key={n} className="t num" type="number" step="0.01" min={0} name={`rate${n}`}
+                    <input key={n} className="t num" type="number" step="any" min={0} name={`rate${n}`}
                            defaultValue={0} style={{ padding: "6px 8px" }} />
                   ))}
                   {rateCols < 3 && [...Array(3 - rateCols)].map((_, i) => (

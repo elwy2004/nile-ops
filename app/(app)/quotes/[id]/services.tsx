@@ -168,7 +168,7 @@ function EditRow({
         </label>
         <label className="f">
           <span>Actual cost · {b.currency}</span>
-          <input className="t num" type="number" step="0.01" min={0} name="actual_cost"
+          <input className="t num" type="number" step="any" min={0} name="actual_cost"
                  defaultValue={b.actual_cost ?? ""} placeholder={money(b.quoted_cost, dp)} />
         </label>
         <label className="f">

@@ -87,17 +87,17 @@ export default function QuoteEditor({
             </label>
             <label className="f">
               <span>Exchange rate · EGP/USD</span>
-              <input className="t num" type="number" min={0.0001} step={0.01} name="fx" value={terms.fx}
+              <input className="t num" type="number" min={0.0001} step="any" name="fx" value={terms.fx}
                      onChange={e => setTerm("fx", Number(e.target.value) || 0)} />
             </label>
             <label className="f">
               <span>Margin · %</span>
-              <input className="t num" type="number" min={0} step={0.5} name="margin_pct" value={terms.margin_pct}
+              <input className="t num" type="number" min={0} step="any" name="margin_pct" value={terms.margin_pct}
                      onChange={e => setTerm("margin_pct", Number(e.target.value) || 0)} />
             </label>
             <label className="f">
               <span>Domestic flights · USD</span>
-              <input className="t num" type="number" min={0} step={1} name="flights_usd" value={terms.flights_usd}
+              <input className="t num" type="number" min={0} step="any" name="flights_usd" value={terms.flights_usd}
                      onChange={e => setTerm("flights_usd", Number(e.target.value) || 0)} />
             </label>
           </div>
@@ -142,7 +142,7 @@ export default function QuoteEditor({
                         <option value="">— select —</option>
                         {options.map(o => <option key={o.name} value={o.name}>{o.name}</option>)}
                       </select>
-                      <input className="t num" type="number" min={0} step={1} name="qty" value={l.qty}
+                      <input className="t num" type="number" min={0} step="any" name="qty" value={l.qty}
                              aria-label={cfg.qty} onChange={e => setLine(i, { qty: Number(e.target.value) || 0 })} />
                       <span className="tabular" style={{ color: "var(--muted)", textAlign: "right" }}>{money(u, dp)}</span>
                       <span className="tabular" style={{ fontWeight: 600, textAlign: "right" }}>
