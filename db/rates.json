@@ -1,0 +1,1028 @@
+{
+ "hotels": [
+  [
+   "CAI 4",
+   42,
+   33.6
+  ],
+  [
+   "CAI 5",
+   60,
+   48
+  ],
+  [
+   "CAI 5 DLX",
+   140,
+   112
+  ],
+  [
+   "Blue Shadow",
+   120,
+   96
+  ],
+  [
+   "esmeralda",
+   120,
+   96
+  ],
+  [
+   "Steigenberger TAHR",
+   90,
+   72
+  ],
+  [
+   "Farah",
+   200,
+   160
+  ],
+  [
+   "Fermont nile city",
+   120,
+   96
+  ],
+  [
+   "Ramses Helton",
+   100,
+   80
+  ],
+  [
+   "Safir",
+   80,
+   64
+  ],
+  [
+   "Le Passage",
+   60,
+   48
+  ],
+  [
+   "Steigen Pyr.",
+   90,
+   72
+  ],
+  [
+   "Hamees CRZ",
+   220,
+   176
+  ],
+  [
+   "Mena House Marriott",
+   250,
+   200
+  ],
+  [
+   "regancy west",
+   120,
+   96
+  ],
+  [
+   "Meridien APT",
+   50,
+   40
+  ],
+  [
+   "Movenpick Ssh",
+   80,
+   64
+  ],
+  [
+   "sheraton Sharm",
+   60,
+   48
+  ],
+  [
+   "park regency SSH",
+   100,
+   80
+  ],
+  [
+   "Semiramis III",
+   85,
+   68
+  ],
+  [
+   "safir waterfalls SSh",
+   65,
+   52
+  ],
+  [
+   "Radamis 2",
+   80,
+   64
+  ],
+  [
+   "Solimar Naema Bay",
+   60,
+   48
+  ],
+  [
+   "Mayfair CRz",
+   200,
+   160
+  ],
+  [
+   "Sarah 2",
+   100,
+   80
+  ],
+  [
+   "Stella Makadi HRG",
+   55,
+   44
+  ],
+  [
+   "Titanic Palace HRG",
+   85,
+   68
+  ],
+  [
+   "Titanic Royal HRG",
+   110,
+   88
+  ],
+  [
+   "Sonesta St. G LXR",
+   75,
+   60
+  ],
+  [
+   "Steigenberger LXR",
+   60,
+   48
+  ],
+  [
+   "Hilton LXR",
+   65,
+   52
+  ],
+  [
+   "Winter Palace",
+   250,
+   200
+  ],
+  [
+   "Tulip ASW",
+   90,
+   72
+  ],
+  [
+   "Movenpick ASW",
+   150,
+   120
+  ],
+  [
+   "New Cataract",
+   250,
+   200
+  ],
+  [
+   "Symphony",
+   75,
+   60
+  ],
+  [
+   "Grand Nile T",
+   85,
+   68
+  ],
+  [
+   "Sonesta St.Goege CRZ",
+   200,
+   160
+  ],
+  [
+   "Nile CRZ 4 *",
+   70,
+   56
+  ],
+  [
+   "Nile CRZ 5*",
+   65,
+   52
+  ],
+  [
+   "Nile CRZ 5 DLX",
+   260,
+   208
+  ],
+  [
+   "HRG 4*",
+   60,
+   48
+  ],
+  [
+   "HRG 5*",
+   50,
+   40
+  ],
+  [
+   "HRG 5 DLX",
+   120,
+   96
+  ],
+  [
+   "SSH 4*",
+   60,
+   48
+  ],
+  [
+   "SSH 5*",
+   85,
+   68
+  ],
+  [
+   "SSH 5 DLX",
+   190,
+   152
+  ],
+  [
+   "St. Cath 4*",
+   40,
+   32
+  ],
+  [
+   "St.Cath 5*",
+   50,
+   40
+  ],
+  [
+   "St. Cath 5 Dlx",
+   60,
+   48
+  ],
+  [
+   "Alex 4*",
+   45,
+   36
+  ],
+  [
+   "Alex 5*",
+   60,
+   48
+  ],
+  [
+   "Alex 5Dlx",
+   80,
+   64
+  ],
+  [
+   "Siwa 4 *",
+   30,
+   24
+  ],
+  [
+   "Siwa 5*",
+   45,
+   36
+  ],
+  [
+   "Siwa 5 Dlx",
+   100,
+   80
+  ],
+  [
+   "Luxor 4 *",
+   60,
+   48
+  ],
+  [
+   "Luxor 5 Dlx",
+   150,
+   120
+  ],
+  [
+   "ASW 4 *",
+   50,
+   40
+  ],
+  [
+   "ASW 5*",
+   100,
+   80
+  ],
+  [
+   "Minya 4*",
+   45,
+   36
+  ],
+  [
+   "Minya 5 *",
+   55,
+   44
+  ],
+  [
+   "Minya 5 DLX",
+   100,
+   80
+  ],
+  [
+   "Sleeping Train",
+   125,
+   100
+  ],
+  [
+   "Sitting train",
+   30,
+   24
+  ],
+  [
+   "Seti Abs ( FB )",
+   200,
+   160
+  ]
+ ],
+ "transfers": [
+  [
+   "Abu simbel",
+   7200,
+   10765,
+   20800
+  ],
+  [
+   "Airport Trans",
+   1450,
+   1800,
+   4500
+  ],
+  [
+   "Alex.",
+   5300,
+   8000,
+   15000
+  ],
+  [
+   "Cairo by night",
+   1300,
+   2300,
+   4000
+  ],
+  [
+   "crz pack trans",
+   6500,
+   11000,
+   22000
+  ],
+  [
+   "Dandara & Abydos",
+   4900,
+   7755,
+   17790
+  ],
+  [
+   "F/D",
+   2500,
+   3500,
+   7000
+  ],
+  [
+   "H /F",
+   1500,
+   2500,
+   5000
+  ],
+  [
+   "Fayoum",
+   5300,
+   8000,
+   15000
+  ],
+  [
+   "S/L show",
+   1300,
+   2050,
+   4000
+  ],
+  [
+   "CAI / HRG",
+   7250,
+   10000,
+   20700
+  ],
+  [
+   "CAI / SSH",
+   8000,
+   11500,
+   25000
+  ],
+  [
+   "CAI /Siwa",
+   13000,
+   19000,
+   36500
+  ],
+  [
+   "CAI / CATH.",
+   8000,
+   11500,
+   25000
+  ],
+  [
+   "CAI / Minia",
+   6000,
+   7650,
+   13500
+  ],
+  [
+   "LXR /ASW",
+   4900,
+   7755,
+   18865
+  ],
+  [
+   "LXR /HRG",
+   6040,
+   9700,
+   20835
+  ],
+  [
+   "CAI /LXR",
+   12650,
+   17000,
+   36500
+  ],
+  [
+   "Motor boat Philae",
+   400,
+   750,
+   1100
+  ],
+  [
+   "CAI / Cath./Taba",
+   9500,
+   12000,
+   26000
+  ],
+  [
+   "Over night",
+   3000,
+   4000,
+   8000
+  ],
+  [
+   "Asw APT /  CRZ",
+   875,
+   1665,
+   2900
+  ],
+  [
+   "LXR APT / CRZ",
+   770,
+   1410,
+   2800
+  ],
+  [
+   "Philae",
+   875,
+   1665,
+   3255
+  ],
+  [
+   "Dam /Oblisk/",
+   1140,
+   1840,
+   3665
+  ],
+  [
+   "Karank & LXR Temp.",
+   1040,
+   1725,
+   4000
+  ],
+  [
+   "West bank LXR",
+   1600,
+   3400,
+   8700
+  ],
+  [
+   "Cai /Sokhna",
+   3400,
+   6000,
+   8600
+  ],
+  [
+   "Cai / Zaafrana",
+   4100,
+   6800,
+   11000
+  ],
+  [
+   "Feluca",
+   800,
+   1000,
+   1200
+  ],
+  [
+   "Denderah",
+   2500,
+   3560,
+   9350
+  ],
+  [
+   "Asw /Abs / Asw (01 NT)",
+   9300,
+   14100,
+   27000
+  ],
+  [
+   "CAI /ASW",
+   16000,
+   23500,
+   43500
+  ],
+  [
+   "LXR Temple",
+   590,
+   1040,
+   2250
+  ],
+  [
+   "Karnak Temple",
+   710,
+   1210,
+   2850
+  ],
+  [
+   "BUS Tour CAI /LXR",
+   18000,
+   26000,
+   55000
+  ],
+  [
+   "Exclusive PYR Visit",
+   65000,
+   65000,
+   65000
+  ],
+  [
+   "Cai- Dhsh-Maid- Fym",
+   5000,
+   7500,
+   15000
+  ],
+  [
+   "CAI / Tanis/ san elhgr",
+   4900,
+   8100,
+   13000
+  ],
+  [
+   "CAI / Bahariya Oasis",
+   6000,
+   8250,
+   15000
+  ],
+  [
+   "Cai/Mnya/Ass/Soh/ Lxr",
+   12800,
+   18800,
+   35750
+  ],
+  [
+   "CAI / ALEX/M.Matroh/Siwa",
+   13100,
+   20300,
+   34000
+  ],
+  [
+   "LXR /Esna",
+   2480,
+   3565,
+   9350
+  ],
+  [
+   "Philea / Dam",
+   1200,
+   2100,
+   4200
+  ],
+  [
+   "LXR /Marsa Alam",
+   8000,
+   14000,
+   27000
+  ]
+ ],
+ "sights": [
+  [
+   "Pyr",
+   700
+  ],
+  [
+   "Sakkara",
+   800
+  ],
+  [
+   "MMFS",
+   200
+  ],
+  [
+   "Egy Museum",
+   550
+  ],
+  [
+   "CITDL",
+   550
+  ],
+  [
+   "Civil.Museum",
+   550
+  ],
+  [
+   "CITDL alx",
+   200
+  ],
+  [
+   "pompeo",
+   200
+  ],
+  [
+   "Alex Bib.",
+   150
+  ],
+  [
+   "Dandara",
+   300
+  ],
+  [
+   "DHSHR",
+   220
+  ],
+  [
+   "CRZ ( Visits )",
+   4250
+  ],
+  [
+   "Abydos",
+   260
+  ],
+  [
+   "Dahshour",
+   220
+  ],
+  [
+   "ABS",
+   750
+  ],
+  [
+   "Catacombs Alex",
+   200
+  ],
+  [
+   "Gran pyramid",
+   1500
+  ],
+  [
+   "Small pyramid",
+   280
+  ],
+  [
+   "Moez street",
+   220
+  ],
+  [
+   "Hassan & Rifae",
+   220
+  ],
+  [
+   "Islamic Mus.",
+   340
+  ],
+  [
+   "Coptic Mus.",
+   280
+  ],
+  [
+   "kasr Abdeen",
+   100
+  ],
+  [
+   "Zoser Pyr. Sakk",
+   280
+  ],
+  [
+   "Esna",
+   200
+  ],
+  [
+   "Valley of kings",
+   750
+  ],
+  [
+   "Queens",
+   220
+  ],
+  [
+   "Hatchipsut",
+   440
+  ],
+  [
+   "Karnak",
+   600
+  ],
+  [
+   "Luxor Temp.",
+   500
+  ],
+  [
+   "Deir Medina",
+   220
+  ],
+  [
+   "Habu",
+   220
+  ],
+  [
+   "Ramasiem",
+   220
+  ],
+  [
+   "LXR Mus.",
+   400
+  ],
+  [
+   "Mumification Mus.",
+   220
+  ],
+  [
+   "Nefertari",
+   2500
+  ],
+  [
+   "Seti I",
+   2000
+  ],
+  [
+   "Tut Ankh Amoun lxr",
+   700
+  ],
+  [
+   "Ramses 6 Lxr",
+   220
+  ],
+  [
+   "Obelisk",
+   220
+  ],
+  [
+   "Edfu",
+   550
+  ],
+  [
+   "kom Ombo",
+   450
+  ],
+  [
+   "Philae",
+   550
+  ],
+  [
+   "Kalabsha",
+   200
+  ],
+  [
+   "ABS 22/10 & 22/02",
+   1200
+  ],
+  [
+   "High Dam",
+   200
+  ],
+  [
+   "Asw Mus.",
+   100
+  ],
+  [
+   "Nubian Mus.",
+   400
+  ],
+  [
+   "Nobles Cairo",
+   400
+  ],
+  [
+   "Graco Roman Mus.Alex",
+   400
+  ],
+  [
+   "Jewelry Mus.Alex",
+   220
+  ],
+  [
+   "St. Cath Protec.",
+   750
+  ],
+  [
+   "Taba Border Tax Fees",
+   500
+  ],
+  [
+   "Felucca ASW",
+   300
+  ],
+  [
+   "Beni Hassan",
+   200
+  ],
+  [
+   "Tuna el Gabl",
+   200
+  ],
+  [
+   "Amarna",
+   200
+  ],
+  [
+   "Safari Siwa",
+   3000
+  ],
+  [
+   "Eyoun Mousa",
+   60
+  ],
+  [
+   "Gabel  Deads Siwa",
+   120
+  ],
+  [
+   "Oracale Temple",
+   120
+  ],
+  [
+   "Deir Hagar",
+   100
+  ],
+  [
+   "Hawara Pyr.",
+   150
+  ],
+  [
+   "Lahun Pyr.",
+   150
+  ],
+  [
+   "Midoum",
+   150
+  ],
+  [
+   "Bagawat",
+   120
+  ],
+  [
+   "Ghawita",
+   100
+  ],
+  [
+   "Hibis",
+   180
+  ],
+  [
+   "Obelisc Matariya",
+   200
+  ],
+  [
+   "Sakk. Colective",
+   1400
+  ],
+  [
+   "Serapeum",
+   340
+  ],
+  [
+   "kab",
+   200
+  ],
+  [
+   "elefantine island",
+   200
+  ],
+  [
+   "Wadi Rayan",
+   500
+  ],
+  [
+   "Wadi Heitan",
+   750
+  ],
+  [
+   "Desert Permit Siwa",
+   500
+  ],
+  [
+   "GEM",
+   1900
+  ],
+  [
+   "Valle Monos",
+   200
+  ],
+  [
+   "Kornet Marei",
+   200
+  ],
+  [
+   "Asasif",
+   200
+  ],
+  [
+   "Selsela",
+   200
+  ],
+  [
+   "Qubbet El hawa",
+   200
+  ],
+  [
+   "Carter House",
+   220
+  ],
+  [
+   "Tumba Pabasa",
+   200
+  ],
+  [
+   "Ankhtifi Moalla",
+   150
+  ],
+  [
+   "Sohel island",
+   150
+  ],
+  [
+   "Joja tomb",
+   120
+  ]
+ ],
+ "meals": [
+  [
+   "Aswan dinner",
+   200
+  ],
+  [
+   "Aswan lunch",
+   300
+  ],
+  [
+   "Cairo dinner",
+   350
+  ],
+  [
+   "City lunch",
+   350
+  ],
+  [
+   "PYR lunch",
+   350
+  ],
+  [
+   "Luxor lunch",
+   250
+  ],
+  [
+   "Luxor Dinner",
+   200
+  ],
+  [
+   "Alex Lunch",
+   300
+  ],
+  [
+   "Lounge Lunch",
+   800
+  ],
+  [
+   "Dinner Nile CRZ",
+   2200
+  ],
+  [
+   "Go Bus CAI / HRG",
+   800
+  ],
+  [
+   "Go Bus LXR /HRG",
+   600
+  ]
+ ],
+ "services": [
+  [
+   "Airport assist",
+   300
+  ],
+  [
+   "Guide Acc. CRZ",
+   1500
+  ],
+  [
+   "Guide Fees",
+   1500
+  ],
+  [
+   "Bedouin Guide",
+   600
+  ],
+  [
+   "guide flight",
+   7000
+  ]
+ ]
+}
