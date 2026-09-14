@@ -156,7 +156,13 @@ async function main() {
   const back = await db.query<{ snapshot: { totals: { sellPP: number } } }>("SELECT snapshot FROM quotes WHERE id=$1", [qid]);
   near("snapshot survives a round trip through jsonb", back.rows[0].snapshot.totals.sellPP, 1851.85);
 
-  await db.query("INSERT INTO quote_events (quote_id,user_id,kind,from_status,to_status) VALUES ($1,$2,'status','quoted','accepted')", [qid, u.rows[0].id]);
+  // transition forms carry no note field, so the insert must survive a null
+  await db.query(
+    `INSERT INTO quote_events (quote_id,user_id,kind,from_status,to_status,note)
+     VALUES ($1,$2,'status','quoted','accepted',COALESCE($3,''))`, [qid, u.rows[0].id, null]
+  );
+  const noteRow = await db.query<{ note: string }>("SELECT note FROM quote_events WHERE quote_id=$1", [qid]);
+  check("a missing note stores as empty, not null", noteRow.rows[0].note, "");
   const ev = await db.query<{ c: string }>("SELECT count(*)::text c FROM quote_events WHERE quote_id=$1", [qid]);
   check("audit trail records the handoff", ev.rows[0].c, "1");
 

@@ -146,7 +146,8 @@ export async function moveQuote(form: FormData): Promise<void> {
   const user = await requireUser();
   const id = Number(form.get("id"));
   const to = String(form.get("to")) as Status;
-  const note = String(form.get("note") ?? "").slice(0, 500);
+  const raw = form.get("note");
+  const note = typeof raw === "string" ? raw.slice(0, 500) : "";
 
   const quote = await loadQuote(id);
   if (!quote) redirect("/quotes");
@@ -183,7 +184,7 @@ export async function moveQuote(form: FormData): Promise<void> {
     }
     await client.query(
       `INSERT INTO quote_events (quote_id, user_id, kind, from_status, to_status, note)
-       VALUES ($1,$2,'status',$3,$4,$5)`,
+       VALUES ($1,$2,'status',$3,$4,COALESCE($5,''))`,
       [id, user.id, quote.status, to, note]
     );
   });
@@ -202,7 +203,7 @@ export async function addNote(form: FormData): Promise<void> {
   const quote = await loadQuote(id);
   if (!quote) redirect("/quotes");
 
-  await q("INSERT INTO quote_events (quote_id, user_id, kind, note) VALUES ($1,$2,'note',$3)", [id, user.id, note]);
+  await q("INSERT INTO quote_events (quote_id, user_id, kind, note) VALUES ($1,$2,'note',COALESCE($3,''))", [id, user.id, note]);
   revalidatePath(`/quotes/${id}`);
   redirect(`/quotes/${id}`);
 }
