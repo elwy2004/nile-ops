@@ -9,7 +9,11 @@ import { freeze, SECTION_ORDER, type Line, type RateItem, type Section, type Sna
 import { bookingRowsFromSnapshot, SUPPLIER_KINDS, type BookingStatus } from "./bookings";
 
 /* Every action re-checks who is calling and what they may do. A page that
-   renders a button is not authorisation. */
+   renders a button is not authorisation.
+
+   Every NOT NULL text column is written through COALESCE($n,''). An empty
+   string reaches this database as NULL, so an untouched optional field would
+   otherwise violate the constraint and fail the whole request. */
 
 async function loadRates(): Promise<RateItem[]> {
   return q<RateItem>(
@@ -117,7 +121,7 @@ export async function saveQuote(form: FormData): Promise<void> {
 
   await tx(async client => {
     await client.query(
-      `UPDATE quotes SET title=$2, client_name=$3, pax=$4, arrival=$5, departure=$6,
+      `UPDATE quotes SET title=COALESCE($2,''), client_name=COALESCE($3,''), pax=$4, arrival=$5, departure=$6,
               fx=$7, margin_pct=$8, flights_usd=$9, updated_at=now()
          WHERE id=$1`,
       [id,
@@ -133,7 +137,7 @@ export async function saveQuote(form: FormData): Promise<void> {
       const name = (items[i] ?? "").trim();
       if (!SECTION_ORDER.includes(section) || name === "") continue;
       await client.query(
-        "INSERT INTO quote_lines (quote_id, section, item_name, qty, sort) VALUES ($1,$2,$3,$4,$5)",
+        "INSERT INTO quote_lines (quote_id, section, item_name, qty, sort) VALUES ($1,$2,COALESCE($3,''),$4,$5)",
         [id, section, name, qtys[i] ?? 0, sort++]
       );
     }
@@ -191,7 +195,7 @@ export async function moveQuote(form: FormData): Promise<void> {
       for (const b of newBookings) {
         await client.query(
           `INSERT INTO bookings (quote_id, section, item_name, qty, sort, currency, quoted_cost)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+           VALUES ($1,$2,COALESCE($3,''),$4,$5,$6,$7)`,
           [id, b.section, b.item_name, b.qty, b.sort, b.currency, b.quoted_cost]
         );
       }
@@ -238,7 +242,7 @@ export async function saveRate(form: FormData): Promise<void> {
 
   const id = Number(form.get("id"));
   const r = (k: string) => Math.max(0, Number(form.get(k)) || 0);
-  await q("UPDATE rate_items SET name=$2, rate1=$3, rate2=$4, rate3=$5 WHERE id=$1",
+  await q("UPDATE rate_items SET name=COALESCE($2,''), rate1=$3, rate2=$4, rate3=$5 WHERE id=$1",
     [id, String(form.get("name") ?? "").trim().slice(0, 120), r("rate1"), r("rate2"), r("rate3")]);
   revalidatePath("/rates");
   redirect("/rates?saved=1");
@@ -253,7 +257,7 @@ export async function addRate(form: FormData): Promise<void> {
   if (!name) redirect("/rates");
   const r = (k: string) => Math.max(0, Number(form.get(k)) || 0);
   await q(
-    `INSERT INTO rate_items (book,name,rate1,rate2,rate3) VALUES ($1,$2,$3,$4,$5)
+    `INSERT INTO rate_items (book,name,rate1,rate2,rate3) VALUES ($1,COALESCE($2,''),$3,$4,$5)
      ON CONFLICT (book,name) DO UPDATE SET rate1=EXCLUDED.rate1, rate2=EXCLUDED.rate2, rate3=EXCLUDED.rate3`,
     [book, name, r("rate1"), r("rate2"), r("rate3")]
   );
@@ -288,7 +292,7 @@ export async function createUser(_prev: unknown, form: FormData): Promise<{ erro
   const clash = await one("SELECT id FROM users WHERE lower(email) = $1", [email]);
   if (clash) return { error: "Someone already has that email." };
 
-  await q("INSERT INTO users (email,name,role,password_hash) VALUES ($1,$2,$3,$4)",
+  await q("INSERT INTO users (email,name,role,password_hash) VALUES (COALESCE($1,''),COALESCE($2,''),$3,$4)",
     [email, name, role, await hashPassword(password)]);
   revalidatePath("/admin");
   return { ok: `${name} can now sign in. Tell them to change the password.` };
@@ -416,13 +420,15 @@ export async function saveSupplier(_prev: unknown, form: FormData): Promise<{ er
   if (idRaw === "") {
     const clash = await one("SELECT id FROM suppliers WHERE lower(name) = lower($1)", [name]);
     if (clash) return { error: "A supplier with that name already exists." };
-    await q(`INSERT INTO suppliers (name,kind,phone,email,notes) VALUES ($1,$2,$3,$4,$5)`, fields);
+    await q(`INSERT INTO suppliers (name,kind,phone,email,notes)
+             VALUES (COALESCE($1,''),$2,COALESCE($3,''),COALESCE($4,''),COALESCE($5,''))`, fields);
     revalidatePath("/suppliers");
     return { ok: `${name} added.` };
   }
 
   await q(
-    `UPDATE suppliers SET name=$2, kind=$3, phone=$4, email=$5, notes=$6 WHERE id=$1`,
+    `UPDATE suppliers SET name=COALESCE($2,''), kind=$3, phone=COALESCE($4,''),
+            email=COALESCE($5,''), notes=COALESCE($6,'') WHERE id=$1`,
     [Number(idRaw), ...fields]
   );
   revalidatePath("/suppliers");

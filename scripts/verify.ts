@@ -165,6 +165,22 @@ async function main() {
   );
   const noteRow = await db.query<{ note: string }>("SELECT note FROM quote_events WHERE quote_id=$1", [qid]);
   check("a missing note stores as empty, not null", noteRow.rows[0].note, "");
+
+  // Empty strings reach the production database as NULL, so every NOT NULL text
+  // column must be written through COALESCE. Simulate by passing null outright.
+  const optional: [string, string][] = [
+    ["suppliers", `INSERT INTO suppliers (name,kind,phone,email,notes)
+                   VALUES (COALESCE($1,''),'hotel',COALESCE($2,''),COALESCE($3,''),COALESCE($4,''))`],
+  ];
+  for (const [table, sql] of optional) {
+    let ok = true;
+    try { await db.query(sql, ["A Hotel", null, null, null]); } catch { ok = false; }
+    check(`${table}: untouched optional fields survive`, ok, true);
+  }
+  const sRow = await db.query<{ email: string; notes: string }>(
+    "SELECT email, notes FROM suppliers WHERE name='A Hotel'"
+  );
+  check("they store as empty strings", [sRow.rows[0].email, sRow.rows[0].notes], ["", ""]);
   const ev = await db.query<{ c: string }>("SELECT count(*)::text c FROM quote_events WHERE quote_id=$1", [qid]);
   check("audit trail records the handoff", ev.rows[0].c, "1");
 
