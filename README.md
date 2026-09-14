@@ -39,26 +39,34 @@ status flags, not accounting records.
 
 ## Setting it up
 
-### 1. A database
+Live at **https://nile-ops.vercel.app** (Vercel project `elwy1/nile-ops`,
+Nile Postgres via the Vercel Marketplace).
 
-In the Vercel dashboard: your project → **Storage** → **Create Database** →
-**Neon (Postgres)**. Connect it to this project; Vercel sets `DATABASE_URL` for you.
+### Deploying
 
-### 2. Schema, price book and the first admin
+`npm run build` runs the migration first, so **deploying applies the schema and
+loads any new rates**. The database credential therefore never has to leave
+Vercel:
 
 ```bash
-vercel env pull .env.local          # brings DATABASE_URL down
-npm run migrate                     # schema + 215 rates + admin account
+vercel deploy --prod
 ```
 
-`migrate` prints the admin email and a generated password. It is safe to re-run;
-add `--reset-admin` to set a new admin password. Override the email with
-`ADMIN_EMAIL=you@company.com npm run migrate`.
+The migration is idempotent — safe on every deploy.
 
-### 3. Sign in and add your team
+### The first admin
 
-Change the admin password under **Account**, then create real accounts under
-**People**. Keep `admin` for one or two people.
+Created by the migration from `ADMIN_EMAIL` / `ADMIN_PASSWORD` if that email has
+no account yet. `ADMIN_PASSWORD` was removed from the project after first use;
+set it again (plus `--reset-admin`) only if you are locked out.
+
+Add the rest of the team under **People**, and keep `admin` for one or two people.
+
+### Notes on this Postgres
+
+Nile rejects standalone `CREATE SEQUENCE`, so quote references are derived from
+the row id rather than a sequence. Implicit `SERIAL` sequences are fine. If you
+ever move to another Postgres, nothing needs to change.
 
 ## Local development
 
