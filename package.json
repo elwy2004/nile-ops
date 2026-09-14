@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "tsx scripts/migrate.ts && next build",
     "start": "next start",
     "dev:db": "tsx scripts/dev-db.ts",
     "migrate": "tsx scripts/migrate.ts",

@@ -1,4 +1,5 @@
 import { Pool, type QueryResultRow } from "pg";
+import { connectionString, sslFor } from "./db-url";
 
 /* One pool per process. Next.js hot-reloads modules in dev, so stash it on
    globalThis or every reload leaks a pool. */
@@ -6,11 +7,10 @@ const g = globalThis as unknown as { _pool?: Pool };
 
 function pool(): Pool {
   if (!g._pool) {
-    const connectionString = process.env.DATABASE_URL;
-    if (!connectionString) throw new Error("DATABASE_URL is not set — see README");
+    const url = connectionString();
     g._pool = new Pool({
-      connectionString,
-      ssl: connectionString.includes("localhost") ? undefined : { rejectUnauthorized: false },
+      connectionString: url,
+      ssl: sslFor(url),
       // PGlite's dev socket server accepts one connection at a time; Neon wants several.
       max: Number(process.env.DB_POOL_MAX || 5),
       // Drop idle sockets quickly: the dev server closes them, and a reused
