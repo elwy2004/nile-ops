@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
@@ -220,8 +221,8 @@ function ReadOnlyQuote({
                 if (!rows.length) return null;
                 const dp = section === "acc" ? 2 : 0;
                 return (
-                  <>
-                    <tr key={section}>
+                  <Fragment key={section}>
+                    <tr>
                       <td colSpan={4} style={{ background: "var(--surface-2)", fontWeight: 600, textAlign: "left" }}>
                         {SECTIONS[section].label}
                         <span className="qref" style={{ display: "inline", marginLeft: 8 }}>{SECTIONS[section].cur}</span>
@@ -238,7 +239,7 @@ function ReadOnlyQuote({
                         </tr>
                       );
                     })}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>
