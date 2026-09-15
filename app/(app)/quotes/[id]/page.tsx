@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { q, one } from "@/lib/db";
-import { moveQuote, addNote } from "@/lib/actions";
+import { moveQuote, addNote, duplicateQuote } from "@/lib/actions";
 import {
   allowedTransitions, blockedReason, canEditQuote, canSeeMargin,
   STATUS_LABEL, STATUS_DESK, type Status,
@@ -37,7 +37,7 @@ export default async function QuotePage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ denied?: string; saved?: string; booked?: string; blocked?: string; needsref?: string; money?: string; badamount?: string; hasmoney?: string }>;
+  searchParams: Promise<{ denied?: string; saved?: string; booked?: string; blocked?: string; needsref?: string; money?: string; badamount?: string; hasmoney?: string; copied?: string }>;
 }) {
   const user = await requireUser();
   const { id: idParam } = await params;
@@ -134,6 +134,14 @@ export default async function QuotePage({
         <div className="actions" style={{ alignItems: "center" }}>
           <span className={`pill ${deskClass}`}>{STATUS_LABEL[quote.status]}</span>
           {frozen && <span className="pill frozen">Priced {quote.accepted_at ? stamp(quote.accepted_at) : ""}</span>}
+          {(user.role === "sales" || user.role === "admin") && (
+            <form action={duplicateQuote}>
+              <input type="hidden" name="id" value={quote.id} />
+              <input type="hidden" name="ref" value={quote.ref} />
+              <button className="btn btn-sm" type="submit"
+                      title="Start a new quote from this itinerary">Duplicate</button>
+            </form>
+          )}
           <Link href="/quotes" className="btn btn-sm">All quotes</Link>
           {user.role === "admin" && <DeleteFile id={quote.id} reference={quote.ref} />}
         </div>
@@ -146,6 +154,11 @@ export default async function QuotePage({
       )}
       {sp.saved && (
         <div className="note" style={{ marginBottom: 16 }}><div>Quote saved.</div></div>
+      )}
+      {sp.copied && (
+        <div className="note" style={{ marginBottom: 16 }}>
+          <div>Copied. The itinerary came across — set the client and the dates for this one.</div>
+        </div>
       )}
       {sp.booked && (
         <div className="note" style={{ marginBottom: 16 }}><div>Service updated.</div></div>

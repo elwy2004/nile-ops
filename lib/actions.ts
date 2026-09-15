@@ -642,3 +642,48 @@ export async function deleteQuoteFile(form: FormData): Promise<void> {
   revalidatePath("/finance");
   redirect("/quotes?deleted=" + encodeURIComponent(guard.ref ?? String(id)));
 }
+
+/** Start a new quote from an existing one. Copies the terms and the itinerary,
+    never the bookings, invoices or history — those belong to the file they
+    happened on. */
+export async function duplicateQuote(form: FormData): Promise<void> {
+  const user = await requireUser();
+  if (user.role !== "sales" && user.role !== "admin") redirect("/quotes?denied=1");
+
+  const from = Number(form.get("id"));
+  const src = await one<{
+    title: string; client_name: string; pax: number; fx: number;
+    margin_pct: number; flights_usd: number;
+  }>(
+    `SELECT title, client_name, pax, fx::float8 AS fx, margin_pct::float8 AS margin_pct,
+            flights_usd::float8 AS flights_usd FROM quotes WHERE id = $1`, [from]
+  );
+  if (!src) redirect("/quotes");
+
+  const newId = await tx(async client => {
+    const ins = await client.query<{ id: number }>(
+      `INSERT INTO quotes (title, client_name, pax, fx, margin_pct, flights_usd, created_by, owner_id)
+       VALUES (COALESCE($1,''), '', $2, $3, $4, $5, $6, $6) RETURNING id`,
+      [src.title ? `${src.title} (copy)` : "", src.pax, src.fx, src.margin_pct, src.flights_usd, user.id]
+    );
+    const id = ins.rows[0].id;
+    await client.query(
+      `UPDATE quotes SET ref = 'Q-' || to_char(created_at,'YYYY') || '-' || lpad(id::text,4,'0')
+        WHERE id = $1`, [id]
+    );
+    await client.query(
+      `INSERT INTO quote_lines (quote_id, section, item_name, qty, sort)
+       SELECT $1, section, item_name, qty, sort FROM quote_lines WHERE quote_id = $2`,
+      [id, from]
+    );
+    await client.query(
+      `INSERT INTO quote_events (quote_id, user_id, kind, note)
+       VALUES ($1,$2,'created',COALESCE($3,''))`,
+      [id, user.id, `Copied from ${String(form.get("ref") ?? "another file")}`]
+    );
+    return id;
+  });
+
+  revalidatePath("/quotes");
+  redirect(`/quotes/${newId}?copied=1`);
+}

@@ -5,6 +5,7 @@ import { createQuote } from "@/lib/actions";
 import { STATUS_LABEL, STATUS_DESK, canSeeMargin, type Status } from "@/lib/workflow";
 import { compute, type Line, type RateItem, type Snapshot } from "@/lib/pricing";
 import { money, shortDate, stamp } from "@/lib/format";
+import QuoteSearch from "./search";
 
 type Row = {
   id: number; ref: string; title: string; client_name: string; status: Status;
@@ -84,6 +85,7 @@ export default async function QuotesPage({
           </p>
         </div>
         <div className="actions">
+          {rows.length > 4 && <QuoteSearch count={shown.length} />}
           <nav className="nav">
             <Link href="/quotes?desk=mine" className={filter === "mine" ? "on" : undefined}>My desk ({mine.length})</Link>
             <Link href="/quotes?desk=all" className={filter === "all" ? "on" : undefined}>All ({rows.length})</Link>
@@ -156,6 +158,10 @@ export default async function QuotesPage({
                 ))}
               </tbody>
             </table>
+            <div id="noMatches" hidden className="empty">
+              <b>Nothing matches</b>
+              Try the file reference, the client, or part of the title.
+            </div>
           </div>
         )}
       </div>

@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { saveQuote } from "@/lib/actions";
 import {
   compute, SECTIONS, SECTION_ORDER, TIER_LABELS, tierIndex,
   type Line, type RateItem, type Section,
 } from "@/lib/pricing";
 import { money } from "@/lib/format";
+import ItemPicker from "./picker";
 
 type Terms = {
   id: number; title: string; client_name: string; pax: number;
@@ -21,6 +22,21 @@ export default function QuoteEditor({
 }) {
   const [terms, setTerms] = useState<Terms>(quote);
   const [lines, setLines] = useState<Line[]>(initialLines);
+  const [saving, setSaving] = useState(false);
+
+  // Saving is explicit, so the page has to say when there is something to lose.
+  const dirty = useMemo(
+    () => JSON.stringify(terms) !== JSON.stringify(quote)
+       || JSON.stringify(lines) !== JSON.stringify(initialLines),
+    [terms, lines, quote, initialLines]
+  );
+
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
   const byBook = useMemo(() => {
     const m = new Map<string, RateItem[]>();
@@ -137,11 +153,13 @@ export default function QuoteEditor({
                   return (
                     <div key={i} className="lineRow">
                       <input type="hidden" name="section" value={section} />
-                      <select className="t" name="item" value={l.item_name}
-                              onChange={e => setLine(i, { item_name: e.target.value })}>
-                        <option value="">— select —</option>
-                        {options.map(o => <option key={o.name} value={o.name}>{o.name}</option>)}
-                      </select>
+                      <input type="hidden" name="item" value={l.item_name} />
+                      <ItemPicker
+                        value={l.item_name}
+                        options={options.map(o => o.name)}
+                        onChange={name => setLine(i, { item_name: name })}
+                        placeholder={`search ${cfg.label.toLowerCase().replace(" & others", "")}…`}
+                      />
                       <input className="t num" type="number" min={0} step="any" name="qty" value={l.qty}
                              aria-label={cfg.qty} onChange={e => setLine(i, { qty: Number(e.target.value) || 0 })} />
                       <span className="tabular" style={{ color: "var(--muted)", textAlign: "right" }}>{money(u, dp)}</span>
@@ -194,12 +212,31 @@ export default function QuoteEditor({
             )}
           </div>
         </div>
-        <button className="btn btn-go" type="submit" style={{ justifyContent: "center" }}>Save quote</button>
+        <button className={`btn ${dirty ? "btn-go" : ""}`} type="submit" disabled={!dirty || saving}
+                onClick={() => setSaving(true)} style={{ justifyContent: "center" }}>
+          {saving ? "Saving…" : dirty ? "Save changes" : "Saved"}
+        </button>
       </aside>
 
+      {dirty && (
+        <div className="saveBar">
+          <span>Unsaved changes</span>
+          <button className="btn btn-go btn-sm" type="submit" disabled={saving}
+                  onClick={() => setSaving(true)}>
+            {saving ? "Saving…" : "Save changes"}
+          </button>
+        </div>
+      )}
+
       <style>{`
+        .saveBar{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:40;
+                 display:flex;align-items:center;gap:14px;padding:10px 12px 10px 18px;
+                 background:var(--surface);border:1px solid var(--accent);border-radius:999px;
+                 box-shadow:0 14px 34px -14px rgba(0,0,0,.9);font-size:13px}
+        .saveBar span{color:var(--ink-2)}
         .lineRow{display:grid;grid-template-columns:minmax(0,1fr) 76px 90px 100px 34px;gap:8px;align-items:center;padding:5px 6px}
         .lineRow:hover{background:var(--surface-2);border-radius:6px}
+        .lineRow .picker{position:relative}
         @media (max-width:900px){
           form.grid{grid-template-columns:1fr!important}
           aside{position:static!important;order:-1}

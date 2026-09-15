@@ -84,6 +84,23 @@ way to tell a pricing mistake from a currency movement. With it, 13,350 EGP
 quoted at 50 and paid at 62.5 shows as **+53.40 USD of currency gain**, kept
 separate from margin.
 
+## Working quickly
+
+- **Type-to-search item picker.** The price book has 215 entries; a dropdown of
+  87 sights was unusable. Typing `kar` puts Karnak first (prefix matches rank
+  above substring ones), Enter commits, Escape backs out. Only names that exist
+  in the book can be committed.
+- **Duplicate.** Most files are variations on one you have already built.
+  Duplicate copies the terms and itinerary into a fresh quote and deliberately
+  leaves the client, dates, bookings, invoices and history behind.
+- **Unsaved changes are visible.** Saving is explicit, so a sticky bar appears
+  the moment anything differs from what is stored, the button reads *Save
+  changes* rather than *Saved*, and leaving the page warns you.
+- **Search the file list** once there are more than four.
+- **Confirm a service inline.** Once a supplier is assigned, type the reference
+  straight into the row — the full editor is only needed for dates, costs and
+  notes.
+
 ## Deleting a file
 
 There is no delete for sales, operations or finance: a quote's history is the

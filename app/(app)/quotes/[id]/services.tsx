@@ -94,7 +94,12 @@ export default function Services({
                             </td>
                             {editable && (
                               <td>
-                                <button className="mini" type="button" onClick={() => setOpen(b.id)}>Edit</button>
+                                <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                                  {b.supplier_id && b.status !== "confirmed" && b.status !== "cancelled" && (
+                                    <QuickConfirm b={b} />
+                                  )}
+                                  <button className="mini" type="button" onClick={() => setOpen(b.id)}>Edit</button>
+                                </div>
                               </td>
                             )}
                           </>
@@ -109,6 +114,34 @@ export default function Services({
         );
       })}
     </div>
+  );
+}
+
+/* Confirming is the commonest action by far, and opening the whole editor to
+   type one reference is the slowest way to do it. Every other field is carried
+   through untouched — updateBooking writes the whole row. */
+function QuickConfirm({ b }: { b: Booking }) {
+  const [ref, setRef] = useState("");
+  return (
+    <form action={updateBooking} style={{ display: "flex", gap: 6 }}>
+      <input type="hidden" name="id" value={b.id} />
+      <input type="hidden" name="supplier_id" value={b.supplier_id ?? ""} />
+      <input type="hidden" name="status" value="confirmed" />
+      <input type="hidden" name="service_date" value={b.service_date ? String(b.service_date).slice(0, 10) : ""} />
+      <input type="hidden" name="actual_cost" value={b.actual_cost ?? ""} />
+      <input type="hidden" name="notes" value={b.notes} />
+      <input
+        className="t"
+        name="confirmation_no"
+        value={ref}
+        onChange={e => setRef(e.target.value)}
+        placeholder="ref no."
+        aria-label={`Confirmation number for ${b.item_name}`}
+        style={{ width: 96, padding: "4px 7px", fontSize: 12 }}
+      />
+      <button className="mini" type="submit" disabled={ref.trim() === ""}
+              title="Mark confirmed with this reference">Confirm</button>
+    </form>
   );
 }
 
