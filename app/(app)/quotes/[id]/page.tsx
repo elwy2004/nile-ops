@@ -37,7 +37,7 @@ export default async function QuotePage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ denied?: string; saved?: string; booked?: string; blocked?: string; needsref?: string; money?: string; badamount?: string; hasmoney?: string; copied?: string }>;
+  searchParams: Promise<{ denied?: string; saved?: string; booked?: string; blocked?: string; needsref?: string; money?: string; badamount?: string; hasmoney?: string; copied?: string; moved?: string }>;
 }) {
   const user = await requireUser();
   const { id: idParam } = await params;
@@ -160,7 +160,7 @@ export default async function QuotePage({
           <div>Copied. The itinerary came across — set the client and the dates for this one.</div>
         </div>
       )}
-      {sp.booked && (
+      {sp.booked && !sp.moved && (
         <div className="note" style={{ marginBottom: 16 }}><div>Service updated.</div></div>
       )}
       {sp.blocked && (
@@ -173,8 +173,19 @@ export default async function QuotePage({
           <div>A confirmed booking needs both a supplier and their confirmation number.</div>
         </div>
       )}
-      {sp.money && (
+      {sp.money && !sp.moved && (
         <div className="note" style={{ marginBottom: 16 }}><div>Recorded.</div></div>
+      )}
+      {sp.moved && STATUS_LABEL[sp.moved as Status] && (
+        <div className="note" style={{ marginBottom: 16, borderColor: "var(--accent)" }}>
+          <div>
+            That was the last thing owed here, so the file forwarded itself to{" "}
+            <b>{STATUS_LABEL[sp.moved as Status]}</b>
+            {STATUS_DESK[sp.moved as Status] && <> — it is now on the {
+              STATUS_DESK[sp.moved as Status] === "ops" ? "operations" : STATUS_DESK[sp.moved as Status]
+            } desk</>}.
+          </div>
+        </div>
       )}
       {sp.badamount && (
         <div className="note bad" style={{ marginBottom: 16 }}><div>Enter an amount greater than zero.</div></div>

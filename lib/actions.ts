@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { q, one, tx } from "./db";
 import { createSession, destroySession, requireUser, hashPassword, verifyPassword } from "./auth";
 import { blockedReason, canEditQuote, canEditRates, canTransition, type Status, type Role } from "./workflow";
+import { homeFor } from "./home";
 import { freeze, SECTION_ORDER, type Line, type RateItem, type Section, type Snapshot } from "./pricing";
 import { bookingRowsFromSnapshot, SUPPLIER_KINDS, type BookingStatus } from "./bookings";
 
@@ -50,8 +51,9 @@ export async function login(_prev: unknown, form: FormData): Promise<{ error?: s
   if (!user || !(await verifyPassword(password, user.password_hash))) {
     return { error: "That email and password don't match." };
   }
+  const role = await one<{ role: Role }>("SELECT role FROM users WHERE id = $1", [user.id]);
   await createSession(user.id);
-  redirect("/quotes");
+  redirect(homeFor(role?.role ?? "sales"));
 }
 
 export async function logout(): Promise<void> {
@@ -352,6 +354,7 @@ export async function updateBooking(form: FormData): Promise<void> {
     redirect(`${back}?needsref=1`);
   }
 
+  let moved: Status | null = null;
   await tx(async client => {
     await client.query(
       `UPDATE bookings SET supplier_id=$2, status=$3, confirmation_no=COALESCE($4,''),
@@ -368,11 +371,13 @@ export async function updateBooking(form: FormData): Promise<void> {
          VALUES ($1,$2,'booking',COALESCE($3,''))`,
         [row.quote_id, user.id, `${row.item_name}: ${status}${confirmation_no ? ` (${confirmation_no})` : ""}`]
       );
+      moved = await forwardIfServicesSettled(client, row.quote_id, user.id);
     }
   });
 
   revalidatePath(back);
-  redirect(`${back}?booked=1`);
+  revalidatePath("/operations");
+  redirect(`${back}?booked=1${moved ? "&moved=" + moved : ""}`);
 }
 
 /** Apply a supplier and date to every still-unassigned line of one section. */
@@ -496,6 +501,7 @@ export async function setInvoiceStatus(form: FormData): Promise<void> {
   const to = String(form.get("to"));
   if (!["draft", "issued", "void"].includes(to)) redirect(back);
 
+  let moved: Status | null = null;
   await tx(async client => {
     await client.query(
       `UPDATE invoices SET status=$2, issued_on = CASE WHEN $2='issued' THEN COALESCE(issued_on, CURRENT_DATE) ELSE issued_on END,
@@ -506,10 +512,12 @@ export async function setInvoiceStatus(form: FormData): Promise<void> {
       `INSERT INTO quote_events (quote_id, user_id, kind, note) VALUES ($1,$2,'invoice',COALESCE($3,''))`,
       [row.quote_id, user.id, `Invoice ${row.number ?? id}: ${to}`]
     );
+    if (to === "issued") moved = await forwardIfInvoiced(client, row.quote_id, user.id);
   });
 
   revalidatePath(back);
-  redirect(`${back}?money=1`);
+  revalidatePath("/finance");
+  redirect(`${back}?money=1${moved ? "&moved=" + moved : ""}`);
 }
 
 export async function recordReceipt(form: FormData): Promise<void> {
@@ -526,6 +534,7 @@ export async function recordReceipt(form: FormData): Promise<void> {
   if (amount <= 0) redirect(`${back}?badamount=1`);
   const receivedRaw = String(form.get("received_on") ?? "").trim();
 
+  let moved: Status | null = null;
   await tx(async client => {
     await client.query(
       `INSERT INTO receipts (invoice_id, amount, currency, received_on, method, reference, notes, recorded_by)
@@ -541,10 +550,12 @@ export async function recordReceipt(form: FormData): Promise<void> {
       [inv.quote_id, user.id,
        `Received ${amount.toFixed(2)} ${inv.currency} against ${inv.number ?? `invoice ${invoiceId}`}`]
     );
+    moved = await forwardIfSettled(client, inv.quote_id, user.id);
   });
 
   revalidatePath(back);
-  redirect(`${back}?money=1`);
+  revalidatePath("/finance");
+  redirect(`${back}?money=1${moved ? "&moved=" + moved : ""}`);
 }
 
 export async function deleteReceipt(form: FormData): Promise<void> {
@@ -686,4 +697,78 @@ export async function duplicateQuote(form: FormData): Promise<void> {
 
   revalidatePath("/quotes");
   redirect(`/quotes/${newId}?copied=1`);
+}
+
+/* ---------- automatic handoffs ----------
+   A file moves to the next desk the moment the work that desk owed is
+   demonstrably finished — the same conditions the manual buttons check. The
+   move is written to the history as automatic so it is never mistaken for
+   someone's decision, and each desk keeps a way to pull a file back. */
+
+type Mover = { query: (text: string, params?: unknown[]) => Promise<unknown> };
+
+async function advance(
+  client: Mover, quoteId: number, userId: number, from: Status, to: Status, why: string
+): Promise<void> {
+  await client.query(
+    "UPDATE quotes SET status=$2, updated_at=now() WHERE id=$1 AND status=$3",
+    [quoteId, to, from]
+  );
+  await client.query(
+    `INSERT INTO quote_events (quote_id, user_id, kind, from_status, to_status, note)
+     VALUES ($1,$2,'status',$3,$4,COALESCE($5,''))`,
+    [quoteId, userId, from, to, `Forwarded automatically — ${why}`]
+  );
+}
+
+/** Operations is done once every service is settled. */
+async function forwardIfServicesSettled(client: Mover, quoteId: number, userId: number): Promise<Status | null> {
+  const rows = (await client.query(
+    `SELECT qt.status,
+            COUNT(b.id)::int AS total,
+            COUNT(b.id) FILTER (WHERE b.status IN ('pending','requested'))::int AS open
+       FROM quotes qt LEFT JOIN bookings b ON b.quote_id = qt.id
+      WHERE qt.id = $1 GROUP BY qt.status`, [quoteId]
+  )) as { rows: { status: Status; total: number; open: number }[] };
+  const row = rows.rows[0];
+  if (!row || row.total === 0 || row.open > 0) return null;
+  if (row.status !== "confirming" && row.status !== "accepted") return null;
+
+  await advance(client, quoteId, userId, row.status, "ready", "every service is confirmed");
+  return "ready";
+}
+
+/** Finance has invoiced once an invoice is actually issued. */
+async function forwardIfInvoiced(client: Mover, quoteId: number, userId: number): Promise<Status | null> {
+  const rows = (await client.query(
+    `SELECT qt.status, COUNT(i.id)::int AS issued
+       FROM quotes qt LEFT JOIN invoices i ON i.quote_id = qt.id AND i.status = 'issued'
+      WHERE qt.id = $1 GROUP BY qt.status`, [quoteId]
+  )) as { rows: { status: Status; issued: number }[] };
+  const row = rows.rows[0];
+  if (!row || row.issued === 0 || row.status !== "ready") return null;
+
+  await advance(client, quoteId, userId, "ready", "invoiced", "an invoice has been issued");
+  return "invoiced";
+}
+
+/** And it is paid once nothing issued is still outstanding. */
+async function forwardIfSettled(client: Mover, quoteId: number, userId: number): Promise<Status | null> {
+  const rows = (await client.query(
+    `SELECT qt.status,
+            COALESCE(SUM(i.amount),0)::float8 AS billed,
+            COALESCE(SUM(r.got),0)::float8   AS got
+       FROM quotes qt
+       LEFT JOIN invoices i ON i.quote_id = qt.id AND i.status = 'issued'
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(SUM(amount),0) AS got FROM receipts WHERE invoice_id = i.id
+       ) r ON TRUE
+      WHERE qt.id = $1 GROUP BY qt.status`, [quoteId]
+  )) as { rows: { status: Status; billed: number; got: number }[] };
+  const row = rows.rows[0];
+  if (!row || row.billed <= 0 || row.status !== "invoiced") return null;
+  if (row.billed - row.got > 0.005) return null;
+
+  await advance(client, quoteId, userId, "invoiced", "paid", "every invoice is fully receipted");
+  return "paid";
 }

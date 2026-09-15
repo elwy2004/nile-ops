@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { compute, freeze, makeLookup, tierIndex, type RateItem, type Line } from "../lib/pricing";
-import { allowedTransitions, blockedReason, canEditQuote, canTransition } from "../lib/workflow";
+import { allowedTransitions, blockedReason, canEditQuote, canTransition, TRANSITIONS } from "../lib/workflow";
 import { bookingRowsFromSnapshot, isSettled, outstanding, variance, voucherNo, type Booking } from "../lib/bookings";
 import { realised, receivable, supplierBalances, type Invoice, type SupplierPayment } from "../lib/money";
 import { hashPassword, verifyPassword } from "../lib/auth-crypto";
@@ -374,6 +374,44 @@ async function main() {
        FROM supplier_payments WHERE quote_id=$1`, [qid]
   );
   check("a stronger pound is a loss", realised(invoicesNow, bk.rows, pay2.rows, 50, 700).fxEffectUSD < 0, true);
+
+  console.log("\n── automatic handoffs ──");
+  // the forwarding conditions, expressed exactly as the actions apply them
+  const servicesSettled = async (qi: number) => (await db.query<{ status: string; total: string; open: string }>(
+    `SELECT qt.status, COUNT(b.id)::text AS total,
+            COUNT(b.id) FILTER (WHERE b.status IN ('pending','requested'))::text AS open
+       FROM quotes qt LEFT JOIN bookings b ON b.quote_id=qt.id
+      WHERE qt.id=$1 GROUP BY qt.status`, [qi])).rows[0];
+
+  const f = await db.query<{ id: number }>(
+    "INSERT INTO quotes (title,status,created_by) VALUES ('fwd','confirming',$1) RETURNING id", [u.rows[0].id]);
+  const fid = f.rows[0].id;
+  await db.query(
+    `INSERT INTO bookings (quote_id,section,item_name,qty,sort,currency,quoted_cost,status)
+     VALUES ($1,'acc','A',1,0,'USD',10,'pending'), ($1,'acc','B',1,1,'USD',10,'confirmed')`, [fid]);
+  let s = await servicesSettled(fid);
+  check("one service open holds the file at operations", s.open, "1");
+
+  await db.query("UPDATE bookings SET status='confirmed' WHERE quote_id=$1", [fid]);
+  s = await servicesSettled(fid);
+  check("settling the last one satisfies the condition", [s.open, s.status], ["0", "confirming"]);
+
+  // a file with no services must never forward on an empty condition
+  const empty = await db.query<{ id: number }>(
+    "INSERT INTO quotes (title,status,created_by) VALUES ('empty','confirming',$1) RETURNING id", [u.rows[0].id]);
+  const es = await servicesSettled(empty.rows[0].id);
+  check("a file with no services does not forward", es.total, "0");
+
+  // the guarded UPDATE only fires from the expected status
+  await db.query("UPDATE quotes SET status='closed' WHERE id=$1", [fid]);
+  await db.query("UPDATE quotes SET status='ready' WHERE id=$1 AND status=$2", [fid, "confirming"]);
+  const stuck = await db.query<{ status: string }>("SELECT status FROM quotes WHERE id=$1", [fid]);
+  check("forwarding never moves a file from an unexpected state", stuck.rows[0].status, "closed");
+
+  check("operations can reclaim a file that forwarded itself",
+    TRANSITIONS.ready.find(t => t.to === "confirming")?.roles.includes("ops"), true);
+
+  await db.query("DELETE FROM quotes WHERE id IN ($1,$2)", [fid, empty.rows[0].id]);
 
   console.log("\n── deleting a file ──");
   // the guard the delete action applies: money recorded means hands off

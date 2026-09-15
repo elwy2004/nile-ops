@@ -13,10 +13,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <span className="season">Q.SH 2026</span>
           </div>
           <nav className="nav">
+            {user.role === "ops" && <NavLink href="/operations">My desk</NavLink>}
+            {user.role === "finance" && <NavLink href="/finance">My desk</NavLink>}
             <NavLink href="/quotes">Quotes</NavLink>
-            <NavLink href="/operations">Operations</NavLink>
+            {user.role !== "ops" && <NavLink href="/operations">Operations</NavLink>}
+            {(user.role === "admin") && <NavLink href="/finance">Finance</NavLink>}
             <NavLink href="/suppliers">Suppliers</NavLink>
-            {(user.role === "finance" || user.role === "admin") && <NavLink href="/finance">Finance</NavLink>}
             <NavLink href="/rates">Price book</NavLink>
             {user.role === "admin" && <NavLink href="/admin">People</NavLink>}
             <NavLink href="/account">Account</NavLink>

@@ -77,7 +77,8 @@ export const TRANSITIONS: Record<Status, Transition[]> = {
     { to: "invoiced", label: "Invoice issued", roles: ["finance", "admin"], tone: "go",
       needsIssuedInvoice: true,
       hint: "Raise and issue the invoice below first." },
-    { to: "confirming", label: "Back to operations", roles: ["finance", "admin"], tone: "warn" },
+    { to: "confirming", label: "Back to operations", roles: ["ops", "finance", "admin"], tone: "warn",
+      hint: "Reopens the services if something still needs changing." },
     { to: "cancelled", label: "Cancel", roles: ["finance", "admin"], tone: "stop" },
   ],
   invoiced: [

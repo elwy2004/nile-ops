@@ -84,6 +84,33 @@ way to tell a pricing mistake from a currency movement. With it, 13,350 EGP
 quoted at 50 and paid at 62.5 shows as **+53.40 USD of currency gain**, kept
 separate from margin.
 
+## Each desk, and how files move between them
+
+Signing in lands you on your own work, not a shared list:
+
+| Role | Opens on | Sees |
+| --- | --- | --- |
+| `sales` | the quote pipeline | margin, invoices, receipts |
+| `ops` | services still to confirm | costs and suppliers, **no margin** |
+| `finance` | the money position | everything, and the only desk that can edit money |
+
+**Files forward themselves** the moment the desk that held them is demonstrably
+finished — the conditions are exactly the ones the manual buttons already
+checked, so nothing moves earlier than it used to:
+
+- the last service is confirmed → **Ready to invoice** (finance)
+- an invoice is issued → **Invoiced**
+- every issued invoice is fully receipted → **Paid**
+
+A part payment does not forward anything. A file with no services never
+forwards. Each move is written to the history as *Forwarded automatically* with
+the reason, so it is never mistaken for someone's decision, and the person who
+triggered it is told on screen.
+
+Marking a client's acceptance stays manual — only a person knows the client
+said yes. And operations can pull a file back from **Ready to invoice** if it
+moved on before they were finished.
+
 ## Working quickly
 
 - **Type-to-search item picker.** The price book has 215 entries; a dropdown of
