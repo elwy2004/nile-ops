@@ -14,6 +14,7 @@ import {
   type Invoice, type Receipt, type SupplierPayment,
 } from "@/lib/money";
 import Services from "./services";
+import DeleteFile from "./delete-file";
 import { Receivables, Payables } from "./money";
 import { compute, SECTIONS, SECTION_ORDER, type Line, type RateItem, type Snapshot } from "@/lib/pricing";
 import { money, shortDate, stamp } from "@/lib/format";
@@ -36,7 +37,7 @@ export default async function QuotePage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ denied?: string; saved?: string; booked?: string; blocked?: string; needsref?: string; money?: string; badamount?: string }>;
+  searchParams: Promise<{ denied?: string; saved?: string; booked?: string; blocked?: string; needsref?: string; money?: string; badamount?: string; hasmoney?: string }>;
 }) {
   const user = await requireUser();
   const { id: idParam } = await params;
@@ -134,6 +135,7 @@ export default async function QuotePage({
           <span className={`pill ${deskClass}`}>{STATUS_LABEL[quote.status]}</span>
           {frozen && <span className="pill frozen">Priced {quote.accepted_at ? stamp(quote.accepted_at) : ""}</span>}
           <Link href="/quotes" className="btn btn-sm">All quotes</Link>
+          {user.role === "admin" && <DeleteFile id={quote.id} reference={quote.ref} />}
         </div>
       </div>
 
@@ -163,6 +165,14 @@ export default async function QuotePage({
       )}
       {sp.badamount && (
         <div className="note bad" style={{ marginBottom: 16 }}><div>Enter an amount greater than zero.</div></div>
+      )}
+      {sp.hasmoney && (
+        <div className="note bad" style={{ marginBottom: 16 }}>
+          <div>
+            This file cannot be deleted: money has been recorded against it. Remove the receipts and
+            supplier payments first if it really was only a test.
+          </div>
+        </div>
       )}
 
       {moves.length > 0 && (

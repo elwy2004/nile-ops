@@ -375,6 +375,24 @@ async function main() {
   );
   check("a stronger pound is a loss", realised(invoicesNow, bk.rows, pay2.rows, 50, 700).fxEffectUSD < 0, true);
 
+  console.log("\n── deleting a file ──");
+  // the guard the delete action applies: money recorded means hands off
+  const guardOf = async (quoteId: number) => (await db.query<{ receipts: number; payments: number }>(
+    `SELECT (SELECT COUNT(*) FROM receipts r JOIN invoices i ON i.id=r.invoice_id
+              WHERE i.quote_id=$1)::int AS receipts,
+            (SELECT COUNT(*) FROM supplier_payments p WHERE p.quote_id=$1)::int AS payments`, [quoteId]
+  )).rows[0];
+  const g1 = await guardOf(qid);
+  check("a file with money recorded is protected", g1.receipts > 0 || g1.payments > 0, true);
+
+  const bare = await db.query<{ id: number }>(
+    "INSERT INTO quotes (title,created_by) VALUES ('scratch',$1) RETURNING id", [u.rows[0].id]);
+  const g2 = await guardOf(bare.rows[0].id);
+  check("a file with no money is deletable", g2.receipts === 0 && g2.payments === 0, true);
+  await db.query("DELETE FROM quotes WHERE id=$1", [bare.rows[0].id]);
+  const gone = await db.query<{ c: string }>("SELECT count(*)::text c FROM quotes WHERE id=$1", [bare.rows[0].id]);
+  check("and it really goes", gone.rows[0].c, "0");
+
   console.log("\n── stage 3: cascades ──");
   await db.query("DELETE FROM invoices WHERE id=$1", [depositId]);
   const orphanReceipts = await db.query<{ c: string }>(

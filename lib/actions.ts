@@ -613,3 +613,32 @@ export async function deleteSupplierPayment(form: FormData): Promise<void> {
   revalidatePath(`/quotes/${row.quote_id}`);
   redirect(`/quotes/${row.quote_id}?money=1`);
 }
+
+/* ---------- deleting a file (admin) ----------
+   There is deliberately no delete for anyone else: the history of a quote is
+   the record of who agreed to what. Even for an admin this refuses once real
+   money has been recorded against the file. */
+
+export async function deleteQuoteFile(form: FormData): Promise<void> {
+  const user = await requireUser();
+  const id = Number(form.get("id"));
+  if (user.role !== "admin") redirect(`/quotes/${id}?denied=1`);
+
+  const guard = await one<{ receipts: number; payments: number; ref: string | null; title: string }>(
+    `SELECT qt.ref, qt.title,
+            (SELECT COUNT(*) FROM receipts r JOIN invoices i ON i.id = r.invoice_id
+              WHERE i.quote_id = qt.id)::int AS receipts,
+            (SELECT COUNT(*) FROM supplier_payments p WHERE p.quote_id = qt.id)::int AS payments
+       FROM quotes qt WHERE qt.id = $1`, [id]
+  );
+  if (!guard) redirect("/quotes");
+
+  // Money actually recorded means this is an accounting record, not a draft.
+  if (guard.receipts > 0 || guard.payments > 0) redirect(`/quotes/${id}?hasmoney=1`);
+
+  // Lines, bookings, events, invoices, receipts and payments all cascade.
+  await q("DELETE FROM quotes WHERE id = $1", [id]);
+  revalidatePath("/quotes");
+  revalidatePath("/finance");
+  redirect("/quotes?deleted=" + encodeURIComponent(guard.ref ?? String(id)));
+}

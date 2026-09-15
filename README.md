@@ -84,6 +84,15 @@ way to tell a pricing mistake from a currency movement. With it, 13,350 EGP
 quoted at 50 and paid at 62.5 shows as **+53.40 USD of currency gain**, kept
 separate from margin.
 
+## Deleting a file
+
+There is no delete for sales, operations or finance: a quote's history is the
+record of who agreed to what. An **administrator** gets a guarded Delete on the
+file, which refuses once any receipt or supplier payment has been recorded —
+so a file where real money moved cannot be destroyed. Deleting takes the lines,
+bookings, invoices, history and everything else with it, and cannot be undone.
+Quote numbering never reuses a reference.
+
 ## Not built
 
 Aged debtor reports, multi-file supplier statements, and accounting-package

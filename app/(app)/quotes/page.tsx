@@ -23,7 +23,7 @@ function deskClass(status: Status) {
 export default async function QuotesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ desk?: string; denied?: string }>;
+  searchParams: Promise<{ desk?: string; denied?: string; deleted?: string }>;
 }) {
   const user = await requireUser();
   const sp = await searchParams;
@@ -93,6 +93,12 @@ export default async function QuotesPage({
           )}
         </div>
       </div>
+
+      {sp.deleted && (
+        <div className="note" style={{ marginBottom: 16 }}>
+          <div>{sp.deleted} deleted, along with everything recorded against it.</div>
+        </div>
+      )}
 
       {sp.denied && (
         <div className="note bad" style={{ marginBottom: 16 }}>
