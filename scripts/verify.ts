@@ -9,6 +9,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { compute, freeze, makeLookup, tierIndex, type RateItem, type Line } from "../lib/pricing";
 import { allowedTransitions, blockedReason, canEditQuote, canTransition } from "../lib/workflow";
 import { bookingRowsFromSnapshot, isSettled, outstanding, variance, voucherNo, type Booking } from "../lib/bookings";
+import { realised, receivable, supplierBalances, type Invoice, type SupplierPayment } from "../lib/money";
 import { hashPassword, verifyPassword } from "../lib/auth-crypto";
 import { shortDate } from "../lib/format";
 
@@ -269,7 +270,124 @@ async function main() {
   check("a date string keeps its day", shortDate("2026-03-01"), "01 Mar 2026");
   check("a Date at local midnight keeps its day", shortDate(new Date(2026, 2, 1)), "01 Mar 2026");
 
+  console.log("\n── stage 3: invoicing ──");
+  const inv = async (kind: string, amount: number, status = "issued", currency = "USD") => {
+    const r = await db.query<{ id: number }>(
+      `INSERT INTO invoices (quote_id,kind,status,currency,amount,issued_on)
+       VALUES ($1,$2,$3,$4,$5,CURRENT_DATE) RETURNING id`, [qid, kind, status, currency, amount]
+    );
+    await db.query(
+      `UPDATE invoices SET number='INV-'||to_char(created_at,'YYYY')||'-'||lpad(id::text,4,'0') WHERE id=$1`,
+      [r.rows[0].id]
+    );
+    return r.rows[0].id;
+  };
+  const loadInvoices = async () => (await db.query<Invoice>(
+    `SELECT i.id,i.quote_id,i.number,i.kind,i.status,i.currency,i.amount::float8 AS amount,
+            i.issued_on,i.due_on,i.notes,
+            COALESCE((SELECT SUM(r.amount) FROM receipts r WHERE r.invoice_id=i.id),0)::float8 AS received
+       FROM invoices i WHERE i.quote_id=$1 ORDER BY i.id`, [qid])).rows;
+
+  const depositId = await inv("deposit", 1000);
+  await inv("balance", 2703.70);
+  const draftId = await inv("full", 999, "draft");
+
+  let i0 = await loadInvoices();
+  check("invoices are numbered from their id", /^INV-\d{4}-\d{4}$/.test(i0[0].number!), true);
+  const r0 = receivable(i0, 50);
+  near("only issued invoices count as revenue", r0.invoicedUSD, 3703.70);
+  check("an issued invoice opens the gate", r0.hasIssued, true);
+  check("unreceipted invoices are not settled", r0.fullySettled, false);
+
+  const toInvoiced = canTransition("ready", "invoiced", "finance")!;
+  check("cannot mark invoiced with nothing issued",
+    blockedReason(toInvoiced, [], { hasIssued: false, fullySettled: false, outstandingUSD: 0 }),
+    "No invoice has been issued yet.");
+  const toPaid = canTransition("invoiced", "paid", "finance")!;
+  check("cannot mark paid while money is outstanding",
+    blockedReason(toPaid, [], r0),
+    "3,703.70 USD is still outstanding.");
+
+  await db.query("INSERT INTO receipts (invoice_id,amount,currency,received_on) VALUES ($1,1000,'USD',CURRENT_DATE)", [depositId]);
+  let i1 = await loadInvoices();
+  near("receipts reduce what is owed", receivable(i1, 50).outstandingUSD, 2703.70);
+
+  for (const row of i1) {
+    const owing = row.amount - row.received;
+    if (row.status === "issued" && owing > 0)
+      await db.query("INSERT INTO receipts (invoice_id,amount,currency,received_on) VALUES ($1,$2,$3,CURRENT_DATE)",
+        [row.id, owing, row.currency]);
+  }
+  i1 = await loadInvoices();
+  const rFull = receivable(i1, 50);
+  check("fully receipted opens the paid gate", rFull.fullySettled, true);
+  check("and nothing blocks it", blockedReason(toPaid, [], rFull), null);
+
+  await db.query("UPDATE invoices SET status='void' WHERE id=$1", [draftId]);
+  near("void invoices never count", receivable(await loadInvoices(), 50).invoicedUSD, 3703.70);
+
+  console.log("\n── stage 3: supplier balances ──");
+  const bk = await db.query<Booking>(
+    `SELECT id,quote_id,section,item_name,qty::float8 AS qty,sort,supplier_id,null AS supplier_name,
+            status,confirmation_no,service_date,currency,quoted_cost::float8 AS quoted_cost,
+            actual_cost::float8 AS actual_cost,notes FROM bookings WHERE quote_id=$1 ORDER BY sort`, [qid]
+  );
+  const bal0 = supplierBalances(bk.rows, []);
+  check("balances are grouped per supplier and currency", bal0.length >= 1, true);
+  const egpOwed = bal0.filter(b => b.currency === "EGP").reduce((s, b) => s + b.owed, 0);
+  near("EGP owed matches the bookings", egpOwed, 13350 + 500 + 6850 + 350 + 9600);
+
+  const supId = bk.rows[0].supplier_id!;
+  await db.query(
+    `INSERT INTO supplier_payments (quote_id,supplier_id,amount,currency,fx_rate,paid_on)
+     VALUES ($1,$2,5000,'EGP',60,CURRENT_DATE)`, [qid, supId]
+  );
+  const pay = await db.query<SupplierPayment>(
+    `SELECT id,quote_id,supplier_id,null AS supplier_name,amount::float8 AS amount,currency,
+            fx_rate::float8 AS fx_rate,paid_on,method,reference,notes,null AS who
+       FROM supplier_payments WHERE quote_id=$1`, [qid]
+  );
+  const bal1 = supplierBalances(bk.rows, pay.rows);
+  const egpRow = bal1.find(b => b.currency === "EGP" && b.supplier_id === supId)!;
+  near("a payment reduces the outstanding balance", egpRow.paid, 5000);
+
+  console.log("\n── stage 3: what the file really earned ──");
+  const invoicesNow = await loadInvoices();
+  // sold at 50; 5,000 EGP of it was actually paid at 60, so those pounds cost fewer dollars
+  const earned = realised(invoicesNow, bk.rows, pay.rows, 50, 700);
+  near("revenue is what was invoiced", earned.revenueUSD, 3703.70);
+  const egpTotal = 13350 + 500 + 6850 + 350 + 9600;
+  const usdDirect = 960 + 60 + 700;   // accommodation, the hotel overcharge, flights
+  near("cost at the sold rate", earned.costAtSoldRateUSD, usdDirect + egpTotal / 50);
+  near("cost as actually paid", earned.costAtPaidRateUSD,
+       usdDirect + 5000 / 60 + (egpTotal - 5000) / 50);
+  check("a weaker pound is a gain", earned.fxEffectUSD > 0, true);
+  near("the gain is exactly the rate difference", earned.fxEffectUSD, 5000 / 50 - 5000 / 60);
+  near("margin is revenue less what was really spent", earned.marginUSD,
+       3703.70 - (usdDirect + 5000 / 60 + (egpTotal - 5000) / 50));
+
+  // and the other direction: paying at a stronger pound costs more dollars
+  await db.query("UPDATE supplier_payments SET fx_rate = 40 WHERE quote_id=$1", [qid]);
+  const pay2 = await db.query<SupplierPayment>(
+    `SELECT id,quote_id,supplier_id,null AS supplier_name,amount::float8 AS amount,currency,
+            fx_rate::float8 AS fx_rate,paid_on,method,reference,notes,null AS who
+       FROM supplier_payments WHERE quote_id=$1`, [qid]
+  );
+  check("a stronger pound is a loss", realised(invoicesNow, bk.rows, pay2.rows, 50, 700).fxEffectUSD < 0, true);
+
+  console.log("\n── stage 3: cascades ──");
+  await db.query("DELETE FROM invoices WHERE id=$1", [depositId]);
+  const orphanReceipts = await db.query<{ c: string }>(
+    "SELECT count(*)::text c FROM receipts WHERE invoice_id=$1", [depositId]);
+  check("deleting an invoice takes its receipts", orphanReceipts.rows[0].c, "0");
+
   await db.query("DELETE FROM quotes WHERE id=$1", [qid]);
+  const orphanMoney = await db.query<{ c: string }>(
+    "SELECT count(*)::text c FROM supplier_payments WHERE quote_id=$1", [qid]);
+  check("deleting a quote takes its payments", orphanMoney.rows[0].c, "0");
+  const orphanInvoices = await db.query<{ c: string }>(
+    "SELECT count(*)::text c FROM invoices WHERE quote_id=$1", [qid]);
+  check("deleting a quote takes its invoices", orphanInvoices.rows[0].c, "0");
   const orphanBookings = await db.query<{ c: string }>("SELECT count(*)::text c FROM bookings WHERE quote_id=$1", [qid]);
   check("deleting a quote takes its bookings with it", orphanBookings.rows[0].c, "0");
 

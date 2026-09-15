@@ -1,4 +1,4 @@
-# Nile Ops — Stages 1 & 2
+# Nile Ops
 
 A quotation moving from sales, through operations, to finance. Built on the
 pricing model from `Q.SH 2026.xlsx`.
@@ -53,10 +53,43 @@ Margin is hidden from `ops`: they book hotels, they don't need the markup.
 
 Booking confirmations are written into the same file history as status changes.
 
-## Not built yet (Stage 3)
+## Stage 3 — the money
 
-Invoices, payment schedules, supplier payables, and the realised margin report.
-"Invoiced" and "Paid" are still status flags, not accounting records.
+**This system records money movement. It never moves money and holds no card or
+bank details.** Payment itself stays with your bank or payment provider.
+
+- **Invoices** — deposit, balance or full, raised in USD or EGP, numbered
+  `INV-2026-0001`. Draft until issued; a balance invoice pre-fills with exactly
+  what is left uninvoiced. Printable, showing the itinerary and what is due,
+  never costs or margin.
+- **Receipts** against each invoice, with method and bank reference.
+- **Supplier payments.** What you *owe* is derived from the bookings — there is
+  no second list to keep in step. Each payment records the **rate on the day it
+  went out**.
+- **Gates**: a file cannot be marked Invoiced with nothing issued, nor Paid
+  while anything is outstanding — the button names the exact figure.
+- **What this file actually earned** — revenue against cost valued two ways:
+  at the rate the file was sold at, and at the rates actually paid. The gap is
+  labelled as currency movement rather than pricing. A part-invoiced file says
+  so instead of reporting an alarming margin.
+- **`/finance`** — every live file's position: invoiced, received, client owes,
+  supplier cost, paid out, still owed, and the next due date with overdue
+  flagged. Stated at each file's own sold rate so the columns compare.
+
+### Why the rate on the payment date matters
+
+A file is sold in USD at a rate fixed the day the client accepts, but its EGP
+costs are paid weeks or months later. Without the payment-date rate there is no
+way to tell a pricing mistake from a currency movement. With it, 13,350 EGP
+quoted at 50 and paid at 62.5 shows as **+53.40 USD of currency gain**, kept
+separate from margin.
+
+## Not built
+
+Aged debtor reports, multi-file supplier statements, and accounting-package
+export. Egyptian e-invoicing is not implemented — confirm with your accountant
+what applies to a DMC billing foreign clients in USD before relying on these
+invoices as tax documents.
 
 ## Setting it up
 

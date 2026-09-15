@@ -122,3 +122,61 @@ CREATE INDEX IF NOT EXISTS bookings_quote_idx    ON bookings(quote_id, sort);
 CREATE INDEX IF NOT EXISTS bookings_status_idx   ON bookings(status);
 CREATE INDEX IF NOT EXISTS bookings_supplier_idx ON bookings(supplier_id);
 CREATE INDEX IF NOT EXISTS bookings_date_idx     ON bookings(service_date);
+
+-- ── Stage 3: the money ────────────────────────────────────────────────────
+-- This system RECORDS money movement. It never moves money and holds no card
+-- or bank details.
+
+CREATE TABLE IF NOT EXISTS invoices (
+  id         SERIAL PRIMARY KEY,
+  quote_id   INTEGER NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+  -- INV-2026-0001, derived from id right after insert (no standalone sequences).
+  number     TEXT UNIQUE,
+  kind       TEXT NOT NULL DEFAULT 'full' CHECK (kind IN ('deposit','balance','full')),
+  status     TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','issued','void')),
+  currency   TEXT NOT NULL DEFAULT 'USD' CHECK (currency IN ('USD','EGP')),
+  amount     NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (amount >= 0),
+  issued_on  DATE,
+  due_on     DATE,
+  notes      TEXT NOT NULL DEFAULT '',
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS invoices_quote_idx ON invoices(quote_id);
+
+-- Money in from the client, against an invoice.
+CREATE TABLE IF NOT EXISTS receipts (
+  id          SERIAL PRIMARY KEY,
+  invoice_id  INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  amount      NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+  currency    TEXT NOT NULL DEFAULT 'USD' CHECK (currency IN ('USD','EGP')),
+  received_on DATE NOT NULL,
+  method      TEXT NOT NULL DEFAULT '',
+  reference   TEXT NOT NULL DEFAULT '',
+  notes       TEXT NOT NULL DEFAULT '',
+  recorded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS receipts_invoice_idx ON receipts(invoice_id);
+
+-- Money out to a supplier, against a file. What is OWED is derived from the
+-- bookings (supplier + actual cost); this records what has been settled.
+-- fx_rate is the EGP/USD rate on the day of payment: comparing it with the
+-- rate the file was sold at is what separates real margin from currency drift.
+CREATE TABLE IF NOT EXISTS supplier_payments (
+  id          SERIAL PRIMARY KEY,
+  quote_id    INTEGER NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+  supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+  amount      NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+  currency    TEXT NOT NULL DEFAULT 'EGP' CHECK (currency IN ('USD','EGP')),
+  fx_rate     NUMERIC(12,4),
+  paid_on     DATE NOT NULL,
+  method      TEXT NOT NULL DEFAULT '',
+  reference   TEXT NOT NULL DEFAULT '',
+  notes       TEXT NOT NULL DEFAULT '',
+  recorded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS supplier_payments_quote_idx ON supplier_payments(quote_id);
+CREATE INDEX IF NOT EXISTS supplier_payments_supplier_idx ON supplier_payments(supplier_id);

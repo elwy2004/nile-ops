@@ -40,6 +40,10 @@ export type Transition = {
   needsSettledBookings?: boolean;
   /** Cannot be taken once a supplier booking has been confirmed. */
   blockedByConfirmedBookings?: boolean;
+  /** Needs at least one issued invoice. */
+  needsIssuedInvoice?: boolean;
+  /** Needs every issued invoice fully receipted. */
+  needsFullPayment?: boolean;
   tone?: "go" | "warn" | "stop";
   hint?: string;
 };
@@ -70,12 +74,16 @@ export const TRANSITIONS: Record<Status, Transition[]> = {
     { to: "cancelled", label: "Cancel", roles: ["ops", "admin"], tone: "stop" },
   ],
   ready: [
-    { to: "invoiced", label: "Invoice issued", roles: ["finance", "admin"], tone: "go" },
+    { to: "invoiced", label: "Invoice issued", roles: ["finance", "admin"], tone: "go",
+      needsIssuedInvoice: true,
+      hint: "Raise and issue the invoice below first." },
     { to: "confirming", label: "Back to operations", roles: ["finance", "admin"], tone: "warn" },
     { to: "cancelled", label: "Cancel", roles: ["finance", "admin"], tone: "stop" },
   ],
   invoiced: [
-    { to: "paid", label: "Payment received", roles: ["finance", "admin"], tone: "go" },
+    { to: "paid", label: "Payment received", roles: ["finance", "admin"], tone: "go",
+      needsFullPayment: true,
+      hint: "Record the receipts against each invoice first." },
     { to: "ready", label: "Withdraw invoice", roles: ["finance", "admin"], tone: "warn" },
   ],
   paid: [
@@ -114,8 +122,18 @@ export function canSeeMargin(role: Role): boolean {
     Returns null when nothing blocks it. */
 export function blockedReason(
   t: Transition,
-  bookings: { status: "pending" | "requested" | "confirmed" | "cancelled" }[]
+  bookings: { status: "pending" | "requested" | "confirmed" | "cancelled" }[],
+  money?: { hasIssued: boolean; fullySettled: boolean; outstandingUSD: number }
 ): string | null {
+  if (t.needsIssuedInvoice && money && !money.hasIssued) {
+    return "No invoice has been issued yet.";
+  }
+  if (t.needsFullPayment && money && !money.fullySettled) {
+    const left = money.outstandingUSD;
+    return left > 0
+      ? `${left.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD is still outstanding.`
+      : "No invoice has been issued yet.";
+  }
   if (t.needsSettledBookings) {
     const open = bookings.filter(b => b.status === "pending" || b.status === "requested").length;
     if (open > 0) {

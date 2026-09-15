@@ -9,7 +9,12 @@ import {
   STATUS_LABEL, STATUS_DESK, type Status,
 } from "@/lib/workflow";
 import { outstanding, variance, type Booking, type Supplier } from "@/lib/bookings";
+import {
+  realised, receivable, supplierBalances,
+  type Invoice, type Receipt, type SupplierPayment,
+} from "@/lib/money";
 import Services from "./services";
+import { Receivables, Payables } from "./money";
 import { compute, SECTIONS, SECTION_ORDER, type Line, type RateItem, type Snapshot } from "@/lib/pricing";
 import { money, shortDate, stamp } from "@/lib/format";
 import QuoteEditor from "./editor";
@@ -31,7 +36,7 @@ export default async function QuotePage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ denied?: string; saved?: string; booked?: string; blocked?: string; needsref?: string }>;
+  searchParams: Promise<{ denied?: string; saved?: string; booked?: string; blocked?: string; needsref?: string; money?: string; badamount?: string }>;
 }) {
   const user = await requireUser();
   const { id: idParam } = await params;
@@ -48,7 +53,7 @@ export default async function QuotePage({
   );
   if (!quote) notFound();
 
-  const [lines, rates, events, bookings, suppliers] = await Promise.all([
+  const [lines, rates, events, bookings, suppliers, invoices, receipts, payments] = await Promise.all([
     q<Line>(`SELECT section, item_name, qty::float8 AS qty FROM quote_lines WHERE quote_id=$1 ORDER BY sort, id`, [id]),
     q<RateItem>(`SELECT book, name, rate1::float8 AS rate1, rate2::float8 AS rate2, rate3::float8 AS rate3
                    FROM rate_items WHERE NOT archived ORDER BY book, name`),
@@ -63,12 +68,37 @@ export default async function QuotePage({
                  WHERE b.quote_id=$1 ORDER BY b.sort, b.id`, [id]),
     q<Supplier>(`SELECT id, name, kind, phone, email, notes, archived FROM suppliers
                   WHERE NOT archived ORDER BY name`),
+    q<Invoice>(`SELECT i.id, i.quote_id, i.number, i.kind, i.status, i.currency,
+                       i.amount::float8 AS amount, i.issued_on, i.due_on, i.notes,
+                       COALESCE((SELECT SUM(r.amount) FROM receipts r WHERE r.invoice_id = i.id),0)::float8 AS received
+                  FROM invoices i WHERE i.quote_id=$1 ORDER BY i.id`, [id]),
+    q<Receipt>(`SELECT r.id, r.invoice_id, r.amount::float8 AS amount, r.currency, r.received_on,
+                       r.method, r.reference, r.notes, u.name AS who
+                  FROM receipts r
+                  JOIN invoices i ON i.id = r.invoice_id
+                  LEFT JOIN users u ON u.id = r.recorded_by
+                 WHERE i.quote_id=$1 ORDER BY r.received_on DESC, r.id DESC`, [id]),
+    q<SupplierPayment>(`SELECT p.id, p.quote_id, p.supplier_id, s.name AS supplier_name,
+                               p.amount::float8 AS amount, p.currency, p.fx_rate::float8 AS fx_rate,
+                               p.paid_on, p.method, p.reference, p.notes, u.name AS who
+                          FROM supplier_payments p
+                          LEFT JOIN suppliers s ON s.id = p.supplier_id
+                          LEFT JOIN users u ON u.id = p.recorded_by
+                         WHERE p.quote_id=$1 ORDER BY p.paid_on DESC, p.id DESC`, [id]),
   ]);
 
   const editable = canEditQuote(quote.status, user.role);
   const showMargin = canSeeMargin(user.role);
+  const recv = receivable(invoices, quote.fx);
   const moves = allowedTransitions(quote.status, user.role)
-    .map(m => ({ ...m, blocked: blockedReason(m, bookings) }));
+    .map(m => ({ ...m, blocked: blockedReason(m, bookings, recv) }));
+  const balances = supplierBalances(bookings, payments);
+  const financeCanEdit = user.role === "finance" || user.role === "admin";
+  const seesClientMoney = user.role === "sales" || financeCanEdit;
+  const seesSupplierMoney = user.role === "ops" || financeCanEdit;
+  const earned = showMargin && invoices.length
+    ? realised(invoices, bookings, payments, quote.fx, quote.flights_usd * quote.pax)
+    : null;
   const opsCanEdit = user.role === "ops" || user.role === "admin";
   const openServices = outstanding(bookings);
   const costs = bookings.length ? variance(bookings, quote.fx) : null;
@@ -76,6 +106,9 @@ export default async function QuotePage({
 
   const terms = { pax: quote.pax, fx: quote.fx, margin_pct: quote.margin_pct, flights_usd: quote.flights_usd };
   const totals = quote.snapshot ? quote.snapshot.totals : compute(terms, lines, rates);
+  // A part-invoiced file would otherwise report an alarming margin that simply
+  // reflects the rest of the invoicing not having happened yet.
+  const fullyInvoiced = !earned || earned.revenueUSD >= totals.grpSell - 0.005;
 
   // Once frozen, show what today's book would cost — the gap is the exposure.
   const live = frozen ? compute(terms, lines, rates) : null;
@@ -124,6 +157,12 @@ export default async function QuotePage({
         <div className="note bad" style={{ marginBottom: 16 }}>
           <div>A confirmed booking needs both a supplier and their confirmation number.</div>
         </div>
+      )}
+      {sp.money && (
+        <div className="note" style={{ marginBottom: 16 }}><div>Recorded.</div></div>
+      )}
+      {sp.badamount && (
+        <div className="note bad" style={{ marginBottom: 16 }}><div>Enter an amount greater than zero.</div></div>
       )}
 
       {moves.length > 0 && (
@@ -215,6 +254,88 @@ export default async function QuotePage({
           )}
 
           <Services quoteRef={quote.ref} bookings={bookings} suppliers={suppliers} editable={opsCanEdit} />
+        </div>
+      )}
+
+      {(seesClientMoney || seesSupplierMoney) && quote.snapshot && (
+        <div style={{ marginTop: 22 }}>
+          <div className="page-head" style={{ marginBottom: 12 }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 17, letterSpacing: "-.01em" }}>Money</h2>
+              <p style={{ margin: "3px 0 0", color: "var(--muted)", fontSize: 13 }}>
+                {financeCanEdit
+                  ? "Recorded here, moved by your bank. This system never touches funds."
+                  : "Finance maintains this."}
+              </p>
+            </div>
+          </div>
+
+          {earned && (
+            <div className="card" style={{ marginBottom: 14 }}>
+              <h2>What this file actually earned<span className="side">Realised</span></h2>
+              <div className="cellgrid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", borderTop: 0 }}>
+                <div className="cell">
+                  <div className="cap">Invoiced</div>
+                  <div className="val">{money(earned.revenueUSD)}</div>
+                </div>
+                <div className="cell">
+                  <div className="cap">Cost at sold rate</div>
+                  <div className="val">{money(earned.costAtSoldRateUSD)}</div>
+                </div>
+                <div className="cell">
+                  <div className="cap">Cost as paid</div>
+                  <div className="val">{money(earned.costAtPaidRateUSD)}</div>
+                </div>
+                <div className="cell">
+                  <div className="cap">{fullyInvoiced ? "Realised margin" : "Margin so far"}</div>
+                  <div className={`val ${earned.marginUSD >= 0 ? "pos" : ""}`}
+                       style={earned.marginUSD < 0 ? { color: "var(--crit)" } : undefined}>
+                    {earned.marginUSD >= 0 ? "+" : ""}{money(earned.marginUSD)}
+                    <span style={{ fontSize: 11, color: "var(--faint)", marginLeft: 6 }}>
+                      {money(earned.marginPct, 1)}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="body" style={{ borderTop: "1px solid var(--line)" }}>
+                <p style={{ margin: 0, fontSize: 12.5, color: "var(--muted)" }}>
+                  {!fullyInvoiced && (
+                    <><b style={{ color: "var(--warn)" }}>Not the final figure.</b>{" "}
+                      Only {money(earned.revenueUSD)} of the {money(totals.grpSell)} USD quoted has been
+                      invoiced so far, so the cost below is running against part of the revenue.{" "}</>
+                  )}
+                  {Math.abs(earned.fxEffectUSD) < 0.5 ? (
+                    <>The exchange rate has not moved this file either way
+                       {earned.settledShare < 1 && " on the part settled so far"}.</>
+                  ) : (
+                    <>
+                      The exchange rate has{" "}
+                      <b style={{ color: earned.fxEffectUSD > 0 ? "var(--ok)" : "var(--crit)" }}>
+                        {earned.fxEffectUSD > 0 ? "earned" : "cost"} you{" "}
+                        <span className="tabular">{money(Math.abs(earned.fxEffectUSD))} USD</span>
+                      </b>{" "}
+                      since this was sold at {money(quote.fx, 2)} EGP/USD — that is currency movement, not pricing.
+                    </>
+                  )}
+                  {earned.settledShare < 1 && (
+                    <> Only {money(earned.settledShare * 100, 0)}% of the EGP cost has actually been paid, so the
+                       rest is still valued at the sold rate.</>
+                  )}
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(420px,1fr))" }}>
+            {seesClientMoney && (
+              <Receivables quoteId={quote.id} invoices={invoices} receipts={receipts}
+                           editable={financeCanEdit} sellTotal={totals.grpSell} soldFx={quote.fx} />
+            )}
+            {seesSupplierMoney && (
+              <Payables quoteId={quote.id} balances={balances} payments={payments}
+                        editable={financeCanEdit} soldFx={quote.fx} />
+            )}
+          </div>
         </div>
       )}
 

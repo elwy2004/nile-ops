@@ -47,7 +47,7 @@ export default async function VouchersPage({ params }: { params: Promise<{ id: s
         </div>
         <div className="actions">
           <Link href={`/quotes/${quote.id}`} className="btn btn-sm">Back to file</Link>
-          {bookings.length > 0 && <PrintButton />}
+          {bookings.length > 0 && <PrintButton label="Print vouchers" />}
         </div>
       </div>
 

@@ -442,3 +442,174 @@ export async function archiveSupplier(form: FormData): Promise<void> {
   revalidatePath("/suppliers");
   redirect("/suppliers");
 }
+
+/* ---------- money (finance) ----------
+   Nothing here moves money. It records that money moved, so the file can be
+   reconciled and the real margin worked out. */
+
+function assertFinance(role: Role, backTo: string): void {
+  if (role !== "finance" && role !== "admin") redirect(`${backTo}?denied=1`);
+}
+
+export async function createInvoice(form: FormData): Promise<void> {
+  const user = await requireUser();
+  const quoteId = Number(form.get("quote_id"));
+  const back = `/quotes/${quoteId}`;
+  assertFinance(user.role, back);
+
+  const kind = String(form.get("kind") ?? "full");
+  if (!["deposit", "balance", "full"].includes(kind)) redirect(back);
+  const amount = Math.max(0, Number(form.get("amount")) || 0);
+  if (amount <= 0) redirect(`${back}?badamount=1`);
+  const currency = String(form.get("currency") ?? "USD");
+  if (!["USD", "EGP"].includes(currency)) redirect(back);
+  const dueRaw = String(form.get("due_on") ?? "").trim();
+
+  await tx(async client => {
+    const ins = await client.query<{ id: number }>(
+      `INSERT INTO invoices (quote_id, kind, currency, amount, due_on, notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,COALESCE($6,''),$7) RETURNING id`,
+      [quoteId, kind, currency, amount, dueRaw === "" ? null : dueRaw,
+       String(form.get("notes") ?? "").slice(0, 300), user.id]
+    );
+    // Numbered from its own id, same as quote references.
+    await client.query(
+      `UPDATE invoices SET number = 'INV-' || to_char(created_at,'YYYY') || '-' || lpad(id::text,4,'0')
+        WHERE id = $1`, [ins.rows[0].id]
+    );
+  });
+
+  revalidatePath(back);
+  redirect(`${back}?money=1`);
+}
+
+export async function setInvoiceStatus(form: FormData): Promise<void> {
+  const user = await requireUser();
+  const id = Number(form.get("id"));
+  const row = await one<{ quote_id: number; number: string | null; status: string }>(
+    "SELECT quote_id, number, status FROM invoices WHERE id = $1", [id]
+  );
+  if (!row) redirect("/quotes");
+  const back = `/quotes/${row.quote_id}`;
+  assertFinance(user.role, back);
+
+  const to = String(form.get("to"));
+  if (!["draft", "issued", "void"].includes(to)) redirect(back);
+
+  await tx(async client => {
+    await client.query(
+      `UPDATE invoices SET status=$2, issued_on = CASE WHEN $2='issued' THEN COALESCE(issued_on, CURRENT_DATE) ELSE issued_on END,
+              updated_at=now() WHERE id=$1`,
+      [id, to]
+    );
+    await client.query(
+      `INSERT INTO quote_events (quote_id, user_id, kind, note) VALUES ($1,$2,'invoice',COALESCE($3,''))`,
+      [row.quote_id, user.id, `Invoice ${row.number ?? id}: ${to}`]
+    );
+  });
+
+  revalidatePath(back);
+  redirect(`${back}?money=1`);
+}
+
+export async function recordReceipt(form: FormData): Promise<void> {
+  const user = await requireUser();
+  const invoiceId = Number(form.get("invoice_id"));
+  const inv = await one<{ quote_id: number; number: string | null; currency: string }>(
+    "SELECT quote_id, number, currency FROM invoices WHERE id = $1", [invoiceId]
+  );
+  if (!inv) redirect("/quotes");
+  const back = `/quotes/${inv.quote_id}`;
+  assertFinance(user.role, back);
+
+  const amount = Number(form.get("amount")) || 0;
+  if (amount <= 0) redirect(`${back}?badamount=1`);
+  const receivedRaw = String(form.get("received_on") ?? "").trim();
+
+  await tx(async client => {
+    await client.query(
+      `INSERT INTO receipts (invoice_id, amount, currency, received_on, method, reference, notes, recorded_by)
+       VALUES ($1,$2,$3,$4,COALESCE($5,''),COALESCE($6,''),COALESCE($7,''),$8)`,
+      [invoiceId, amount, inv.currency,
+       receivedRaw === "" ? new Date().toISOString().slice(0, 10) : receivedRaw,
+       String(form.get("method") ?? "").slice(0, 60),
+       String(form.get("reference") ?? "").slice(0, 120),
+       String(form.get("notes") ?? "").slice(0, 300), user.id]
+    );
+    await client.query(
+      `INSERT INTO quote_events (quote_id, user_id, kind, note) VALUES ($1,$2,'receipt',COALESCE($3,''))`,
+      [inv.quote_id, user.id,
+       `Received ${amount.toFixed(2)} ${inv.currency} against ${inv.number ?? `invoice ${invoiceId}`}`]
+    );
+  });
+
+  revalidatePath(back);
+  redirect(`${back}?money=1`);
+}
+
+export async function deleteReceipt(form: FormData): Promise<void> {
+  const user = await requireUser();
+  const id = Number(form.get("id"));
+  const row = await one<{ quote_id: number }>(
+    `SELECT i.quote_id FROM receipts r JOIN invoices i ON i.id = r.invoice_id WHERE r.id = $1`, [id]
+  );
+  if (!row) redirect("/quotes");
+  assertFinance(user.role, `/quotes/${row.quote_id}`);
+  await q("DELETE FROM receipts WHERE id = $1", [id]);
+  revalidatePath(`/quotes/${row.quote_id}`);
+  redirect(`/quotes/${row.quote_id}?money=1`);
+}
+
+export async function recordSupplierPayment(form: FormData): Promise<void> {
+  const user = await requireUser();
+  const quoteId = Number(form.get("quote_id"));
+  const back = `/quotes/${quoteId}`;
+  assertFinance(user.role, back);
+
+  const supplierId = Number(form.get("supplier_id"));
+  if (!supplierId) redirect(back);
+  const amount = Number(form.get("amount")) || 0;
+  if (amount <= 0) redirect(`${back}?badamount=1`);
+  const currency = String(form.get("currency") ?? "EGP");
+  if (!["USD", "EGP"].includes(currency)) redirect(back);
+
+  // The rate on the day it went out. Without it there is no way to tell a
+  // pricing problem from a currency movement.
+  const fxRaw = Number(form.get("fx_rate")) || 0;
+  const fx_rate = currency === "EGP" && fxRaw > 0 ? fxRaw : null;
+  const paidRaw = String(form.get("paid_on") ?? "").trim();
+
+  const sup = await one<{ name: string }>("SELECT name FROM suppliers WHERE id = $1", [supplierId]);
+
+  await tx(async client => {
+    await client.query(
+      `INSERT INTO supplier_payments
+         (quote_id, supplier_id, amount, currency, fx_rate, paid_on, method, reference, notes, recorded_by)
+       VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7,''),COALESCE($8,''),COALESCE($9,''),$10)`,
+      [quoteId, supplierId, amount, currency, fx_rate,
+       paidRaw === "" ? new Date().toISOString().slice(0, 10) : paidRaw,
+       String(form.get("method") ?? "").slice(0, 60),
+       String(form.get("reference") ?? "").slice(0, 120),
+       String(form.get("notes") ?? "").slice(0, 300), user.id]
+    );
+    await client.query(
+      `INSERT INTO quote_events (quote_id, user_id, kind, note) VALUES ($1,$2,'payment',COALESCE($3,''))`,
+      [quoteId, user.id,
+       `Paid ${amount.toFixed(2)} ${currency} to ${sup?.name ?? `supplier ${supplierId}`}`]
+    );
+  });
+
+  revalidatePath(back);
+  redirect(`${back}?money=1`);
+}
+
+export async function deleteSupplierPayment(form: FormData): Promise<void> {
+  const user = await requireUser();
+  const id = Number(form.get("id"));
+  const row = await one<{ quote_id: number }>("SELECT quote_id FROM supplier_payments WHERE id = $1", [id]);
+  if (!row) redirect("/quotes");
+  assertFinance(user.role, `/quotes/${row.quote_id}`);
+  await q("DELETE FROM supplier_payments WHERE id = $1", [id]);
+  revalidatePath(`/quotes/${row.quote_id}`);
+  redirect(`/quotes/${row.quote_id}?money=1`);
+}
