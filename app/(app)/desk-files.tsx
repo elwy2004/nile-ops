@@ -16,17 +16,24 @@ export default function DeskFiles({ role, files }: { role: Role; files: DeskFile
   return (
     <div className="card" style={{ marginBottom: 18 }}>
       <h2>
-        On your desk
+        {/* admin is not a department — it sees every desk at once */}
+        {role === "admin" ? "Every live file" : "On your desk"}
         <span className={`pill ${TONE[role]}`} style={{ marginLeft: 4 }}>
           {files.length} {files.length === 1 ? "file" : "files"}
         </span>
-        <span className="side">{role === "ops" ? "operations" : role}</span>
+        <span className="side">
+          {role === "admin" ? "all three desks" : role === "ops" ? "operations" : role}
+        </span>
       </h2>
 
       {files.length === 0 ? (
         <div className="empty">
-          <b>Nothing waiting on you</b>
-          {arrives ? `A file arrives here by itself once ${arrives}.` : "Start a quote when you are ready."}
+          <b>{role === "admin" ? "No live files" : "Nothing waiting on you"}</b>
+          {arrives
+            ? `A file arrives here by itself once ${arrives}.`
+            : role === "admin"
+              ? "Every file is closed, lost or cancelled."
+              : "Start a quote when you are ready."}
         </div>
       ) : (
         <div className="tablewrap">
