@@ -5,6 +5,8 @@ import { createQuote } from "@/lib/actions";
 import { STATUS_LABEL, STATUS_DESK, canSeeMargin, type Status } from "@/lib/workflow";
 import { compute, type Line, type RateItem, type Snapshot } from "@/lib/pricing";
 import { money, shortDate, stamp } from "@/lib/format";
+import { deskFiles } from "@/lib/desk";
+import DeskFiles from "../desk-files";
 import QuoteSearch from "./search";
 
 type Row = {
@@ -30,6 +32,7 @@ export default async function QuotesPage({
   const sp = await searchParams;
   const showMargin = canSeeMargin(user.role);
 
+  const mine = await deskFiles(user.role);
   const [rows, lines, rates] = await Promise.all([
     q<Row>(
       `SELECT qt.id, qt.ref, qt.title, qt.client_name, qt.status, qt.pax,
@@ -54,10 +57,10 @@ export default async function QuotesPage({
     linesByQuote.set(l.quote_id, arr);
   }
 
-  // "My desk" = the quotes currently waiting on this person's role.
-  const mine = rows.filter(r => STATUS_DESK[r.status] === user.role);
-  const filter = sp.desk ?? (mine.length ? "mine" : "all");
-  const shown = filter === "mine" ? mine : rows;
+  const filter = sp.desk === "mine" ? "mine" : "all";
+  const shown = filter === "mine"
+    ? rows.filter(r => STATUS_DESK[r.status] === user.role)
+    : rows;
 
   const priced = shown.map(r => {
     const t = r.snapshot
@@ -75,20 +78,20 @@ export default async function QuotesPage({
     <>
       <div className="page-head">
         <div>
-          <h1>Quotes</h1>
+          <h1>{user.role === "sales" ? "Sales" : "Quotes"}</h1>
           <p>
             {mine.length
-              ? `${mine.length} waiting on ${user.role === "ops" ? "operations" : user.role}`
+              ? `${mine.length} on your desk`
               : "Nothing waiting on your desk"}
             {" · "}
-            {money(openValue)} USD open
+            {money(openValue)} USD open across every stage
           </p>
         </div>
         <div className="actions">
           {rows.length > 4 && <QuoteSearch count={shown.length} />}
           <nav className="nav">
-            <Link href="/quotes?desk=mine" className={filter === "mine" ? "on" : undefined}>My desk ({mine.length})</Link>
-            <Link href="/quotes?desk=all" className={filter === "all" ? "on" : undefined}>All ({rows.length})</Link>
+            <Link href="/quotes?desk=all" className={filter === "all" ? "on" : undefined}>Every file ({rows.length})</Link>
+            <Link href="/quotes?desk=mine" className={filter === "mine" ? "on" : undefined}>Only mine</Link>
           </nav>
           {(user.role === "sales" || user.role === "admin") && (
             <form action={createQuote}><button className="btn btn-go" type="submit">New quote</button></form>
@@ -108,7 +111,13 @@ export default async function QuotesPage({
         </div>
       )}
 
+      <DeskFiles role={user.role} files={mine} />
+
       <div className="card">
+        <h2>
+          {filter === "mine" ? "Your files, every stage" : "Every file"}
+          <span className="side">including finished and lost</span>
+        </h2>
         {priced.length === 0 ? (
           <div className="empty">
             <b>{filter === "mine" ? "Your desk is clear" : "No quotes yet"}</b>
@@ -168,8 +177,9 @@ export default async function QuotesPage({
 
       <div className="note" style={{ marginTop: 16 }}>
         <div>
-          Quotes still with sales are priced against the <b>current</b> price book. From <b>Client accepted</b>
-          {" "}onward they show the rates and exchange rate they were sold at, marked <b>Priced</b>.
+          The list above is every file in the system, whichever desk holds it. Quotes still with sales are
+          priced against the <b>current</b> price book; from <b>Client accepted</b> onward they show the rates
+          and exchange rate they were sold at, marked <b>Priced</b>.
         </div>
       </div>
     </>

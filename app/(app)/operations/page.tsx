@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
+import { deskFiles } from "@/lib/desk";
+import DeskFiles from "../desk-files";
 import { q } from "@/lib/db";
 import { SECTIONS } from "@/lib/pricing";
 import { BOOKING_LABEL, BOOKING_TONE, type BookingStatus } from "@/lib/bookings";
@@ -26,8 +28,9 @@ const FILTERS = [
 export default async function OperationsPage({
   searchParams,
 }: { searchParams: Promise<{ show?: string }> }) {
-  await requireUser();
+  const user = await requireUser();
   const sp = await searchParams;
+  const mine = await deskFiles(user.role);
   const show = FILTERS.some(f => f.key === sp.show) ? sp.show! : "open";
 
   const where =
@@ -80,7 +83,10 @@ export default async function OperationsPage({
         </div>
       </div>
 
+      <DeskFiles role={user.role} files={mine} />
+
       <div className="card">
+        <h2>Services to chase<span className="side">across every file</span></h2>
         {rows.length === 0 ? (
           <div className="empty">
             <b>Nothing here</b>

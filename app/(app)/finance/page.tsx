@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/auth";
+import { deskFiles } from "@/lib/desk";
+import DeskFiles from "../desk-files";
 import { q } from "@/lib/db";
 import { STATUS_LABEL, type Status } from "@/lib/workflow";
 import { money, shortDate } from "@/lib/format";
@@ -19,8 +21,9 @@ type FileRow = {
 export default async function FinancePage({
   searchParams,
 }: { searchParams: Promise<{ show?: string }> }) {
-  await requireRole("finance", "admin");
+  const user = await requireRole("finance", "admin");
   const sp = await searchParams;
+  const mine = await deskFiles(user.role);
   const show = sp.show === "all" ? "all" : "open";
 
   /* Amounts are converted to USD at each file's own sold rate, which is what
@@ -112,7 +115,10 @@ export default async function FinancePage({
         </div>
       )}
 
+      <DeskFiles role={user.role} files={mine} />
+
       <div className="card">
+        <h2>Money position<span className="side">every accepted file</span></h2>
         {rows.length === 0 ? (
           <div className="empty">
             <b>Nothing to reconcile</b>

@@ -86,13 +86,24 @@ separate from margin.
 
 ## Each desk, and how files move between them
 
-Signing in lands you on your own work, not a shared list:
+Every department gets its own view, and **a file belongs to exactly one desk at
+a time, decided by its status**. It appears there and nowhere else, and moves
+the instant the status moves. `lib/desks.ts` holds that mapping; a test asserts
+every live stage sits on exactly one desk and agrees with the workflow.
 
-| Role | Opens on | Sees |
-| --- | --- | --- |
-| `sales` | the quote pipeline | margin, invoices, receipts |
-| `ops` | services still to confirm | costs and suppliers, **no margin** |
-| `finance` | the money position | everything, and the only desk that can edit money |
+| Desk | Holds files at | Leads with | Its columns |
+| --- | --- | --- | --- |
+| `sales` | draft, sent to client | **Sales** | pax, group total, margin |
+| `ops` | accepted, confirming | **Operations** | services left, next service date |
+| `finance` | ready, invoiced, paid | **Finance** | invoiced, client owes, you owe |
+
+Closed, lost and cancelled files sit on no desk at all.
+
+Each view opens on an **On your desk** card — only that department's files —
+and says in plain words what makes a file arrive and what makes it leave.
+Underneath sits that department's working tool: every file for sales, the
+services worklist for operations, the money position for finance. Margin stays
+hidden from operations throughout.
 
 **Files forward themselves** the moment the desk that held them is demonstrably
 finished — the conditions are exactly the ones the manual buttons already

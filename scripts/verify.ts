@@ -10,6 +10,8 @@ import { compute, freeze, makeLookup, tierIndex, type RateItem, type Line } from
 import { allowedTransitions, blockedReason, canEditQuote, canTransition, TRANSITIONS } from "../lib/workflow";
 import { bookingRowsFromSnapshot, isSettled, outstanding, variance, voucherNo, type Booking } from "../lib/bookings";
 import { realised, receivable, supplierBalances, type Invoice, type SupplierPayment } from "../lib/money";
+import { DESK_STATUSES } from "../lib/desks";
+import { STATUS_DESK, STATUS_LABEL, type Status, type Role } from "../lib/workflow";
 import { hashPassword, verifyPassword } from "../lib/auth-crypto";
 import { shortDate } from "../lib/format";
 
@@ -374,6 +376,23 @@ async function main() {
        FROM supplier_payments WHERE quote_id=$1`, [qid]
   );
   check("a stronger pound is a loss", realised(invoicesNow, bk.rows, pay2.rows, 50, 700).fxEffectUSD < 0, true);
+
+  console.log("\n── one desk per file ──");
+  // every live stage must belong to exactly one department, or a file is either
+  // invisible or on two desks at once
+  const desks: Role[] = ["sales", "ops", "finance"];
+  const live = (Object.keys(STATUS_LABEL) as Status[])
+    .filter(s => !["closed", "lost", "cancelled"].includes(s));
+  for (const s of live) {
+    const owners = desks.filter(r => DESK_STATUSES[r].includes(s));
+    check(`"${STATUS_LABEL[s]}" sits on exactly one desk`, owners.length, 1);
+  }
+  check("the desks agree with who the workflow says owns each stage",
+    live.every(s => DESK_STATUSES[desks.find(r => DESK_STATUSES[r].includes(s))!].includes(s)
+                 && STATUS_DESK[s] === desks.find(r => DESK_STATUSES[r].includes(s))),
+    true);
+  check("finished files sit on no desk",
+    desks.some(r => DESK_STATUSES[r].includes("closed")), false);
 
   console.log("\n── automatic handoffs ──");
   // the forwarding conditions, expressed exactly as the actions apply them
