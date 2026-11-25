@@ -21,8 +21,11 @@ export default function DeskFiles({ role, files }: { role: Role; files: DeskFile
         <span className={`pill ${TONE[role]}`} style={{ marginLeft: 4 }}>
           {files.length} {files.length === 1 ? "file" : "files"}
         </span>
-        <span className="side">
+        <span className="side" style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {role === "admin" ? "all three desks" : role === "ops" ? "operations" : role}
+          {files.length > 0 && (
+            <a href="/api/desk/excel" className="mini" title="Download this list as a spreadsheet">Excel</a>
+          )}
         </span>
       </h2>
 

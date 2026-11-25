@@ -139,6 +139,27 @@ moved on before they were finished.
   straight into the row — the full editor is only needed for dates, costs and
   notes.
 
+## Excel
+
+Two downloads, both `.xlsx` with real numbers rather than formatted text, so a
+column can be totalled in the spreadsheet:
+
+- **A file** — `Excel` on the quote page. Up to three sheets: *Quotation*
+  (header, itinerary by section, the per-person build-up), *Services* (supplier,
+  date, confirmation, quoted vs actual, voucher number) and *Money* (invoices,
+  receipts, supplier payments). Sheets with nothing in them are left out.
+- **A desk** — `Excel` on the *On your desk* card, giving that department's
+  queue with the same columns it sees on screen.
+
+**A download never shows more than the screen.** The export applies the same
+role rules: operations gets no margin line and no client invoices, sales gets
+no supplier payments. Tests assert this by reading the generated workbook back
+and checking those labels are absent.
+
+Figures are rounded to the precision they are stored at (2 decimals, or 4 for
+an exchange rate) — otherwise binary floating point writes 169.55000000000018
+into a cell and anyone widening the column sees it.
+
 ## Deleting a file
 
 There is no delete for sales, operations or finance: a quote's history is the

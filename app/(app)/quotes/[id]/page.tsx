@@ -142,6 +142,8 @@ export default async function QuotePage({
                       title="Start a new quote from this itinerary">Duplicate</button>
             </form>
           )}
+          <a href={`/api/quotes/${quote.id}/excel`} className="btn btn-sm"
+             title="Download this file as a spreadsheet">Excel</a>
           <Link href="/quotes" className="btn btn-sm">All quotes</Link>
           {user.role === "admin" && <DeleteFile id={quote.id} reference={quote.ref} />}
         </div>

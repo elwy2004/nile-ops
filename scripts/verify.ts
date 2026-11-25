@@ -11,6 +11,9 @@ import { allowedTransitions, blockedReason, canEditQuote, canTransition, TRANSIT
 import { bookingRowsFromSnapshot, isSettled, outstanding, variance, voucherNo, type Booking } from "../lib/bookings";
 import { realised, receivable, supplierBalances, type Invoice, type SupplierPayment } from "../lib/money";
 import { DESK_STATUSES } from "../lib/desks";
+import ExcelJS from "exceljs";
+import { quoteWorkbook, quoteFileName, type QuoteHeader } from "../lib/excel/quote";
+import { deskWorkbook } from "../lib/excel/desk";
 import { STATUS_DESK, STATUS_LABEL, type Status, type Role } from "../lib/workflow";
 import { hashPassword, verifyPassword } from "../lib/auth-crypto";
 import { shortDate } from "../lib/format";
@@ -376,6 +379,83 @@ async function main() {
        FROM supplier_payments WHERE quote_id=$1`, [qid]
   );
   check("a stronger pound is a loss", realised(invoicesNow, bk.rows, pay2.rows, 50, 700).fxEffectUSD < 0, true);
+
+  console.log("\n── excel export ──");
+  const header: QuoteHeader = {
+    id: 1, ref: "Q-2026-0042", title: "Cairo & Nile", client_name: "Wanderlust, Berlin",
+    status: "accepted", pax: 2, arrival: "2026-03-01", departure: "2026-03-07",
+    fx: 50, margin_pct: 10, flights_usd: 350, snapshot: snap, owner: "Sara",
+  };
+  const readBack = async (buf: Buffer) => {
+    const wb2 = new ExcelJS.Workbook();
+    await wb2.xlsx.load(new Uint8Array(buf).buffer as ArrayBuffer);
+    const text: string[] = [];
+    const numbers: number[] = [];
+    wb2.eachSheet(ws => ws.eachRow(row => row.eachCell(c => {
+      if (typeof c.value === "number") numbers.push(c.value);
+      else if (c.value != null) text.push(String(c.value));
+    })));
+    return { sheets: wb2.worksheets.map(w => w.name), text, numbers };
+  };
+
+  const full = await readBack(await quoteWorkbook({
+    quote: header, lines, rates: book, totals: snap.totals,
+    bookings: priced2.rows, invoices: invoicesNow, receipts: [], payments: pay2.rows,
+    permissions: { showMargin: true, showClientMoney: true, showSupplierMoney: true },
+  }));
+  check("the workbook opens as a real xlsx", full.sheets.length > 0, true);
+  check("it carries the three sheets", full.sheets, ["Quotation", "Services", "Money"]);
+  check("the file reference is in it", full.text.some(t => t.includes("Q-2026-0042")), true);
+  check("amounts are numbers, not text",
+    full.numbers.some(n => Math.abs(n - 1851.85) < 0.005), true);
+  check("the sold rate is carried", full.numbers.includes(50), true);
+  // binary floating point must not leak into a cell someone may widen
+  check("figures are stored at the precision they came from",
+    full.numbers.every(n => Number.isInteger(Math.round(n * 10000)) && n === Math.round(n * 10000) / 10000),
+    true);
+
+  // operations must not be handed margin in a download it could not see on screen
+  const forOps = await readBack(await quoteWorkbook({
+    quote: header, lines, rates: book, totals: snap.totals,
+    bookings: priced2.rows, invoices: invoicesNow, receipts: [], payments: pay2.rows,
+    permissions: { showMargin: false, showClientMoney: false, showSupplierMoney: true },
+  }));
+  check("operations gets no margin line", forOps.text.some(t => t.startsWith("Margin")), false);
+  check("operations gets no estimated profit", forOps.text.includes("Estimated profit"), false);
+  check("operations still gets the services", forOps.sheets.includes("Services"), true);
+  check("operations sees no client invoices", forOps.text.includes("Invoices"), false);
+
+  // sales sees the client side but not what suppliers were paid
+  const forSales = await readBack(await quoteWorkbook({
+    quote: header, lines, rates: book, totals: snap.totals,
+    bookings: priced2.rows, invoices: invoicesNow, receipts: [], payments: pay2.rows,
+    permissions: { showMargin: true, showClientMoney: true, showSupplierMoney: false },
+  }));
+  check("sales sees invoices", forSales.text.includes("Invoices"), true);
+  check("sales sees no supplier payments", forSales.text.includes("Paid to suppliers"), false);
+
+  // a bare quote should not produce empty Services or Money sheets
+  const draftOnly = await readBack(await quoteWorkbook({
+    quote: { ...header, snapshot: null, status: "draft" },
+    lines, rates: book, totals: compute(terms, lines, book),
+    bookings: [], invoices: [], receipts: [], payments: [],
+    permissions: { showMargin: true, showClientMoney: true, showSupplierMoney: true },
+  }));
+  check("a draft exports just the quotation", draftOnly.sheets, ["Quotation"]);
+
+  check("the filename is safe for any drive",
+    /^[\w.-]+\.xlsx$/.test(quoteFileName(header)), true);
+
+  const deskBook = await readBack(await deskWorkbook("finance", [{
+    id: 1, ref: "Q-2026-0042", title: "Cairo & Nile", client_name: "Wanderlust",
+    status: "ready", pax: 2, arrival: "2026-03-01", departure: "2026-03-07",
+    fx: 50, updated_at: new Date().toISOString(), sell_usd: 3703.7, margin_usd: 336.7,
+    services_total: 12, services_open: 0, next_service: "2026-03-02",
+    invoiced_usd: 3703.7, received_usd: 1000, cost_usd: 2293, paid_usd: 200,
+  }]));
+  check("a desk list exports too", deskBook.sheets, ["Finance"]);
+  near("and carries what the client still owes",
+    deskBook.numbers.find(n => Math.abs(n - 2703.7) < 0.005) ?? 0, 2703.7);
 
   console.log("\n── one desk per file ──");
   // every live stage must belong to exactly one department, or a file is either
